@@ -6,17 +6,21 @@ use soroban_sdk::{
 use crate::savings_goal_tracking::*;
 use crate::types::{DataKey, DataKey3};
 
-// Storage keys
+// Counter storage keys (static)
 const GOAL_COUNTER_KEY: &str = "goal_counter";
-const GOAL_KEY_PREFIX: &str = "goal_";
 const CONTRIBUTION_COUNTER_KEY: &str = "contribution_counter";
-const CONTRIBUTION_KEY_PREFIX: &str = "contribution_";
 const CELEBRATION_COUNTER_KEY: &str = "celebration_counter";
-const CELEBRATION_KEY_PREFIX: &str = "celebration_";
 const BADGE_COUNTER_KEY: &str = "badge_counter";
-const BADGE_KEY_PREFIX: &str = "badge_";
-const MEMBER_GOALS_KEY_PREFIX: &str = "member_goals_";
-const GROUP_GOALS_KEY_PREFIX: &str = "group_goals_";
+
+#[contracttype]
+enum GoalStorageKey {
+    Goal(u32),
+    Contribution(u32),
+    Celebration(u32),
+    Badge(u32),
+    MemberGoals(Address),
+    GroupGoals(u32),
+}
 
 /// Implementation of savings goal tracking functionality
 pub struct SavingsGoalTrackingImpl;
