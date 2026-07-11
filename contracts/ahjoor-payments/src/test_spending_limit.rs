@@ -136,3 +136,55 @@ fn test_default_limit_applies() {
     let result = client.try_complete_payment(&pid);
     assert!(result.is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Test: window resets on fixed boundary, not on last-payment time
+// A customer making one small payment every window_seconds - 1 seconds must
+// still hit the cap within the fixed window.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_window_resets_on_boundary() {
+    let (env, client, _admin, merchant, token_addr, _tc, tac) = setup_spend();
+    let customer = Address::generate(&env);
+    tac.mint(&customer, &5000);
+
+    let cap: i128 = 300;
+    let window: u64 = 3600;
+    client.set_customer_spend_limit(&merchant, &customer, &cap, &window);
+
+    // Payment 1 at t=0: spent = 100, now window_start = 0
+    env.ledger().with_mut(|l| l.timestamp = 0);
+    let pid1 = client.create_payment(&customer, &merchant, &100, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid1);
+
+    // Payment 2 at t=3599 (just inside window): spent = 200
+    env.ledger().with_mut(|l| l.timestamp = 3599);
+    let pid2 = client.create_payment(&customer, &merchant, &100, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid2);
+
+    // Payment 3 at t=3599 (still inside same window): would push spent=300, within cap (300)
+    let pid3 = client.create_payment(&customer, &merchant, &100, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid3);
+
+    // Payment 4 at t=3599 (still inside same window): would push spent=400 > 300, rejected
+    let pid4 = client.create_payment(&customer, &merchant, &100, &token_addr, &None, &None, &None);
+    let result = client.try_complete_payment(&pid4);
+    assert!(result.is_err(), "Fourth payment should exceed the cap within the window");
+
+    // Jump past the window boundary: now >= window_start + window_seconds
+    // window_start = 0, window_seconds = 3600, so at t=3600 the window resets
+    env.ledger().with_mut(|l| l.timestamp = 3600);
+
+    // Payment 5 at t=3600: window resets, spent = 0 + 100 = 100
+    let pid5 = client.create_payment(&customer, &merchant, &100, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid5);
+
+    // Verify we can use the full cap again in the new window
+    let pid6 = client.create_payment(&customer, &merchant, &200, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid6);
+
+    // Further payments in this window should be rejected
+    let pid7 = client.create_payment(&customer, &merchant, &100, &token_addr, &None, &None, &None);
+    let result = client.try_complete_payment(&pid7);
+    assert!(result.is_err(), "New window cap should still be enforced");
+}

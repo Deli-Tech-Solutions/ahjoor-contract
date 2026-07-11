@@ -39,6 +39,7 @@ fn setup_snapshot<'a>() -> (Env, AhjoorContractClient<'a>, Address, Address, Add
             fee_bps: 0,
             fee_recipient: None,
             max_defaults: 3,
+            grace_period_ledgers: 0,
             use_timestamp_schedule: false,
             round_duration_seconds: 0,
             max_members: None,
@@ -49,6 +50,9 @@ fn setup_snapshot<'a>() -> (Env, AhjoorContractClient<'a>, Address, Address, Add
         grace_period_seconds: 0,
         auction_enabled: false,
         auction_window_ledgers: 0,
+        randomize_payout_order: false,
+        reserve_enabled: false,
+        reserve_contribution_bps: 0,
         },
         &None,
     );
@@ -83,7 +87,7 @@ fn test_state_hash_integrity() {
     let id1 = client.take_snapshot(&admin);
 
     // Advance ledger so spam guard doesn't block
-    env.ledger().with_mut(|l| l.sequence += 100);
+    env.ledger().with_mut(|l| l.sequence_number += 100);
 
     let id2 = client.take_snapshot(&admin);
 
@@ -104,9 +108,9 @@ fn test_multiple_snapshots_accumulate() {
     assert_eq!(client.get_snapshot_count(), 0);
 
     client.take_snapshot(&admin);
-    env.ledger().with_mut(|l| l.sequence += 100);
+    env.ledger().with_mut(|l| l.sequence_number += 100);
     client.take_snapshot(&admin);
-    env.ledger().with_mut(|l| l.sequence += 100);
+    env.ledger().with_mut(|l| l.sequence_number += 100);
     client.take_snapshot(&admin);
 
     assert_eq!(client.get_snapshot_count(), 3);
@@ -148,7 +152,7 @@ fn test_get_snapshot_by_id() {
     let (env, client, admin, _m1, _m2) = setup_snapshot();
 
     client.take_snapshot(&admin);
-    env.ledger().with_mut(|l| l.sequence += 100);
+    env.ledger().with_mut(|l| l.sequence_number += 100);
     client.take_snapshot(&admin);
 
     let s0 = client.get_snapshot(&0u32);

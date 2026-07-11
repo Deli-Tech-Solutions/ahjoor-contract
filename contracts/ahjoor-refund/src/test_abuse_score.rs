@@ -36,7 +36,7 @@ fn setup_abuse<'a>() -> (
     // Configure abuse scoring
     refund_client.set_abuse_block_threshold(&admin, &30u32);
     refund_client.set_block_duration_ledgers(&admin, &10_000u64);
-    refund_client.set_rapid_submission_window_ledgers(&admin, &100u32);
+    refund_client.set_rapid_submission_window(&admin, &100u32);
 
     (env, refund_client, payment_client, admin, token_addr, token_client, token_admin)
 }

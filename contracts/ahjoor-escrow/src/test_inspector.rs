@@ -47,36 +47,27 @@ fn test_inspector_approval_enables_release() {
 
     let inspector = Address::generate(&env);
 
-    // Create escrow with inspector
-    let escrow_id = client.create_escrow(
-        &buyer,
-        &seller,
-        &arbiter,
-        &1000,
-        &token,
-        &(env.ledger().timestamp() + 86400),
-        &None,
-        &soroban_sdk::Vec::new(&env),
-        &false,
-        &0,
-    );
+    let req = make_request(&env, &seller, &arbiter, &token, 1000);
+    let escrow_id = client.create_escrow_with_inspector(&buyer, &req, &Some(inspector.clone()));
 
-    // Set inspector
-    let mut escrow = client.get_escrow(&escrow_id);
-    assert_eq!(escrow.status, EscrowStatus::Active);
+    // Seller marks work complete → AwaitingInspection
+    client.seller_mark_complete(&seller, &escrow_id);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::AwaitingInspection);
 
     // Submit inspection result (approved)
     let report_hash = BytesN::<32>::from_array(&env, &[1u8; 32]);
     client.submit_inspection_result(&inspector, &escrow_id, &true, &report_hash);
 
     // Verify status changed to InspectionPassed
-    escrow = client.get_escrow(&escrow_id);
+    let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::InspectionPassed);
 
     // Now buyer can release
     client.release_escrow(&buyer, &escrow_id);
 
-    escrow = client.get_escrow(&escrow_id);
+    let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Released);
 }
 
@@ -86,18 +77,11 @@ fn test_inspector_rejection_blocks_release() {
 
     let inspector = Address::generate(&env);
 
-    let escrow_id = client.create_escrow(
-        &buyer,
-        &seller,
-        &arbiter,
-        &1000,
-        &token,
-        &(env.ledger().timestamp() + 86400),
-        &None,
-        &soroban_sdk::Vec::new(&env),
-        &false,
-        &0,
-    );
+    let req = make_request(&env, &seller, &arbiter, &token, 1000);
+    let escrow_id = client.create_escrow_with_inspector(&buyer, &req, &Some(inspector.clone()));
+
+    // Seller marks work complete → AwaitingInspection
+    client.seller_mark_complete(&seller, &escrow_id);
 
     // Submit inspection result (rejected)
     let report_hash = BytesN::<32>::from_array(&env, &[1u8; 32]);
@@ -108,9 +92,7 @@ fn test_inspector_rejection_blocks_release() {
     assert_eq!(escrow.status, EscrowStatus::InspectionFailed);
 
     // Buyer cannot release
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.release_escrow(&buyer, &escrow_id);
-    }));
+    let result = client.try_release_escrow(&buyer, &escrow_id);
     assert!(result.is_err());
 }
 
@@ -124,7 +106,9 @@ fn make_request(env: &soroban_sdk::Env, seller: &Address, arbiter: &Address, tok
         renewal_count: 0, buyer_inactivity_secs: 0, min_lock_until: None,
         release_base: None, release_quote: None, release_comparison: None,
         release_threshold_price: None, arbiter_fee_bps: None, dispute_default_winner: None,
-        auto_renew_config: None,
+        auto_renew_max_renewals: None,
+
+        auto_renew_interval_ledgers: None,
     }
 }
 
@@ -220,4 +204,34 @@ fn test_low_score_inspector_blocked_from_high_value_escrow() {
     let hv_req = make_request(&env, &seller, &arbiter, &token, 5_000);
     let result = client.try_create_escrow_with_inspector(&buyer, &hv_req, &Some(inspector.clone()));
     assert!(result.is_err());
+}
+
+#[test]
+fn test_replaced_inspector_score_penalized() {
+    let (env, _admin, buyer, seller, arbiter, token, client) = setup_test_env();
+    let old_inspector = Address::generate(&env);
+    let new_inspector = Address::generate(&env);
+
+    soroban_sdk::token::StellarAssetClient::new(&env, &token).mint(&buyer, &5_000);
+
+    let req = make_request(&env, &seller, &arbiter, &token, 1000);
+    let first_escrow = client.create_escrow_with_inspector(&buyer, &req, &Some(old_inspector.clone()));
+    client.dispute_escrow(&buyer, &first_escrow, &String::from_str(&env, "d"), &1000);
+    client.resolve_dispute(&arbiter, &first_escrow, &0);
+
+    let (total_before, correct_before, accuracy_before) = client.get_inspector_score(&old_inspector);
+    assert_eq!((total_before, correct_before, accuracy_before), (1, 1, 10_000));
+
+    let replacement_escrow = client.create_escrow_with_inspector(&buyer, &req, &Some(old_inspector.clone()));
+    client.replace_inspector(&buyer, &replacement_escrow, &new_inspector);
+    client.replace_inspector(&seller, &replacement_escrow, &new_inspector);
+
+    let (total_after, correct_after, accuracy_after) = client.get_inspector_score(&old_inspector);
+    assert_eq!(total_after, 2);
+    assert_eq!(correct_after, 1);
+    assert!(accuracy_after < accuracy_before);
+    assert_eq!(accuracy_after, 5_000);
+
+    let (new_total, new_correct, new_accuracy) = client.get_inspector_score(&new_inspector);
+    assert_eq!((new_total, new_correct, new_accuracy), (0, 0, 10_000));
 }

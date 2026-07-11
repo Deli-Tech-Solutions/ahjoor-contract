@@ -17,3 +17,15 @@ coverage:
 
 clean:
 	cargo clean
+
+
+.PHONY: audit
+audit:
+	@command -v cargo-audit >/dev/null 2>&1 || cargo install cargo-audit --locked
+	cargo audit --deny warnings
+ 
+.PHONY: deny
+deny:
+	@command -v cargo-deny >/dev/null 2>&1 || cargo install cargo-deny --locked
+	cargo deny check
+ 

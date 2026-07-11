@@ -269,3 +269,55 @@ fn test_unrevealed_commit_is_forfeited() {
     // The forfeited 300 deposit remains held by the contract.
     assert_eq!(hx.token.balance(&hx.contract_id), 300);
 }
+
+// ── #392: deadline guards ─────────────────────────────────────────────────────
+
+/// reveal_slot_bid called after reveal_until returns AuctionWindowClosed (103).
+#[test]
+fn test_late_reveal_rejected() {
+    let hx = setup(100);
+    let m1 = hx.members.get(1).unwrap();
+    let salt = BytesN::from_array(&hx.env, &[7u8; 32]);
+
+    hx.client.commit_slot_bid(&m1, &commit_hash(&hx.env, &m1, 300, &salt), &300);
+
+    // Advance past the entire reveal window.
+    hx.env.ledger().set_timestamp(1_000 + COMMIT_DURATION + REVEAL_DURATION + 1);
+
+    let result = hx.client.try_reveal_slot_bid(&m1, &0, &300, &salt);
+    assert!(result.is_err(), "Reveal after reveal_until must be rejected");
+}
+
+/// settle_sealed_slot_auction called before reveal_until returns AuctionWindowClosed (103).
+#[test]
+fn test_early_settle_rejected() {
+    let hx = setup(100);
+    let m1 = hx.members.get(1).unwrap();
+    let salt = BytesN::from_array(&hx.env, &[7u8; 32]);
+
+    hx.client.commit_slot_bid(&m1, &commit_hash(&hx.env, &m1, 300, &salt), &300);
+
+    // Advance into the reveal phase but NOT past it.
+    hx.env.ledger().set_timestamp(1_000 + COMMIT_DURATION + 1);
+    hx.client.reveal_slot_bid(&m1, &0, &300, &salt);
+
+    // Still inside the reveal window — settlement must be rejected.
+    let result = hx.client.try_settle_sealed_slot_auction();
+    assert!(result.is_err(), "Settle during reveal phase must be rejected");
+}
+
+/// A bid revealed within the window is accepted and appears in SealedRevealedBids.
+#[test]
+fn test_reveal_within_window_accepted() {
+    let hx = setup(100);
+    let m1 = hx.members.get(1).unwrap();
+    let salt = BytesN::from_array(&hx.env, &[7u8; 32]);
+
+    hx.client.commit_slot_bid(&m1, &commit_hash(&hx.env, &m1, 300, &salt), &300);
+
+    // Advance to the start of the reveal phase.
+    hx.env.ledger().set_timestamp(1_000 + COMMIT_DURATION + 1);
+    hx.client.reveal_slot_bid(&m1, &0, &300, &salt);
+
+    assert_eq!(hx.client.get_sealed_revealed_bids(&0).len(), 1);
+}

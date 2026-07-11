@@ -83,6 +83,9 @@ fn init_with_auction(
             grace_period_seconds: 0,
             auction_enabled: true,
             auction_window_ledgers,
+            randomize_payout_order: false,
+            reserve_enabled: false,
+            reserve_contribution_bps: 0,
         },
         &None,
     );
@@ -123,6 +126,9 @@ fn init_without_auction(
             grace_period_seconds: 0,
             auction_enabled: false,
             auction_window_ledgers: 0,
+            randomize_payout_order: false,
+            reserve_enabled: false,
+            reserve_contribution_bps: 0,
         },
         &None,
     );
@@ -243,9 +249,11 @@ fn test_multi_bidder_highest_wins() {
 
     client.resolve_slot_auction();
 
-    // member0 and member2 should be refunded their losing bids
-    assert_eq!(token_client.balance(&member0) - bal0_before, 200, "Loser member0 should be refunded");
-    assert_eq!(token_client.balance(&member2) - bal2_before, 200, "Loser member2 should be refunded");
+    // member0 and member2: refund (200) + winning_bid / eligible_count (500/3=166 bonus) = 366
+    let eligible_count: i128 = 3; // member0, member2, member3 (3 non-winning active members)
+    let bonus = 500i128 / eligible_count;
+    assert_eq!(token_client.balance(&member0) - bal0_before, 200 + bonus, "Loser member0 should be refunded plus bonus");
+    assert_eq!(token_client.balance(&member2) - bal2_before, 200 + bonus, "Loser member2 should be refunded plus bonus");
 }
 
 /// Tie-break: two equal bids — earliest submission wins.
@@ -286,11 +294,13 @@ fn test_tie_break_earliest_submission_wins() {
     let bal1_before = token_client.balance(&member1);
     client.resolve_slot_auction();
 
-    // member1 (later bid) should be refunded
+    // member1: refund (300) + winning_bid / eligible_count (300/2=150 bonus) = 450
+    let eligible_count: i128 = 2; // member1 and member2 are eligible non-winning members
+    let bonus = 300i128 / eligible_count;
     assert_eq!(
         token_client.balance(&member1) - bal1_before,
-        300,
-        "Later equal bidder should be refunded"
+        300 + bonus,
+        "Later equal bidder should be refunded plus receive bonus"
     );
 }
 

@@ -1,3 +1,3 @@
 fn main() {
-    println!("ahjoor-token-whitelist");
+    println!("ahjoor-token-whitelist contract");
 }

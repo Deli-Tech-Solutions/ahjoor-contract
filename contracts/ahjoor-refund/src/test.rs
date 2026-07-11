@@ -251,7 +251,7 @@ fn test_approve_refund_by_non_admin_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Refund is not in requested status")]
+#[should_panic(expected = "Refund is not in a state that can be approved")]
 fn test_approve_already_approved_refund_panics() {
     let s = setup();
     let customer = Address::generate(&s.env);

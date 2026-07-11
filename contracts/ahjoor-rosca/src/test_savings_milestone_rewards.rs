@@ -70,7 +70,7 @@ fn make_milestone(env: &Env, id: u32, pct: u32, reward_bps: u32) -> Milestone {
     Milestone {
         milestone_id: id,
         percentage: pct,
-        amount: 0,
+        amount: 1,
         name: String::from_str(env, "test"),
         description: String::from_str(env, ""),
         reward_type: RewardType::Bonus,

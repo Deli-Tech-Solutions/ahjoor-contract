@@ -6,12 +6,18 @@ use soroban_sdk::{
     Address, Env, IntoVal,
 };
 
-fn create_token_contract<'a>(e: &Env) -> Address {
+fn create_token_contract(e: &Env) -> Address {
     e.register_stellar_asset_contract(Address::generate(e))
 }
 
+fn create_funded_token(e: &Env, admin: &Address, buyer: &Address, amount: i128) -> Address {
+    let token_addr = e.register_stellar_asset_contract_v2(admin.clone()).address();
+    soroban_sdk::token::StellarAssetClient::new(e, &token_addr).mint(buyer, &amount);
+    token_addr
+}
+
 fn create_whitelist_contract(e: &Env) -> Address {
-    e.register_contract_wasm(None, ahjoor_token_whitelist::WASM)
+    e.register(ahjoor_token_whitelist::TokenWhitelistContract, ())
 }
 
 fn create_escrow_contract(e: &Env) -> Address {
@@ -49,7 +55,7 @@ fn test_token_validation_in_escrow_creation() {
     let buyer = Address::generate(&e);
     let seller = Address::generate(&e);
     let arbiter = Address::generate(&e);
-    let token = create_token_contract(&e);
+    let token = create_funded_token(&e, &admin, &buyer, 1000);
     let escrow_contract = create_escrow_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
 
@@ -176,7 +182,9 @@ fn test_backward_compatibility_without_whitelist() {
     let buyer = Address::generate(&e);
     let seller = Address::generate(&e);
     let arbiter = Address::generate(&e);
-    let token = create_token_contract(&e);
+    let token_addr = e.register_stellar_asset_contract_v2(admin.clone()).address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&e, &token_addr);
+    token_admin.mint(&buyer, &1000);
     let escrow_contract = create_escrow_contract(&e);
 
     let escrow_client = AhjoorEscrowContractClient::new(&e, &escrow_contract);
@@ -190,7 +198,7 @@ fn test_backward_compatibility_without_whitelist() {
         &seller,
         &arbiter,
         &1000i128,
-        &token,
+        &token_addr,
         &(e.ledger().timestamp() + 3600),
         &None,
         &Vec::new(&e),
@@ -200,7 +208,7 @@ fn test_backward_compatibility_without_whitelist() {
     assert_eq!(escrow_id, 0);
 
     // Should be able to set insurance config with any token
-    escrow_client.set_insurance_config(&admin, &token, &7u64);
+    escrow_client.set_insurance_config(&admin, &token_addr, &7u64);
 }
 
 #[test]
@@ -255,7 +263,7 @@ fn test_token_validation_with_multiple_tokens() {
     let buyer = Address::generate(&e);
     let seller = Address::generate(&e);
     let arbiter = Address::generate(&e);
-    let token1 = create_token_contract(&e);
+    let token1 = create_funded_token(&e, &admin, &buyer, 1000);
     let token2 = create_token_contract(&e);
     let escrow_contract = create_escrow_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
@@ -324,7 +332,7 @@ fn test_token_delisting_prevents_new_escrows() {
     let buyer = Address::generate(&e);
     let seller = Address::generate(&e);
     let arbiter = Address::generate(&e);
-    let token = create_token_contract(&e);
+    let token = create_funded_token(&e, &admin, &buyer, 1000);
     let escrow_contract = create_escrow_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
 

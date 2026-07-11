@@ -1397,6 +1397,34 @@ pub fn emit_credit_score_updated(e: &Env, member: Address, old_score: i128, new_
     CreditScoreUpdated { member, old_score, new_score, reason }.publish(e);
 }
 
+// ── Reputation-Gated Fee Discount Event ──────────────────────────────────────
+
+/// Event: protocol fee reduced because recipient's credit score met the threshold.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct RepFeeDiscountApplied {
+    pub member: Address,
+    pub original_fee_bps: u32,
+    pub effective_fee_bps: u32,
+    pub score: i128,
+}
+
+pub fn emit_rep_fee_discount_applied(
+    e: &Env,
+    member: Address,
+    original_fee_bps: u32,
+    effective_fee_bps: u32,
+    score: i128,
+) {
+    RepFeeDiscountApplied {
+        member,
+        original_fee_bps,
+        effective_fee_bps,
+        score,
+    }
+    .publish(e);
+}
+
 // ── #330: Contribution Delegation Events ─────────────────────────────────────
 
 /// Event: Member granted contribution delegation to a proxy (#330)
@@ -1749,3 +1777,150 @@ pub fn emit_sealed_auction_settled(e: &Env, group_id: u32, round: u32, winner: A
     SealedAuctionSettled { group_id, round, winner, winning_bid }.publish(e);
 }
 
+
+// --- Slot Auction Events (open auction variant) ---
+
+/// Event: A bid was placed in an open slot auction
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SlotBidPlaced {
+    pub group_id: u32,
+    pub bidder: Address,
+    pub desired_slot: u32,
+    pub bid_amount: i128,
+}
+
+pub fn emit_slot_bid_placed(e: &Env, group_id: u32, bidder: Address, desired_slot: u32, bid_amount: i128) {
+    SlotBidPlaced { group_id, bidder, desired_slot, bid_amount }.publish(e);
+}
+
+/// Event: An open slot auction was resolved
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SlotAuctionResolved {
+    pub group_id: u32,
+    pub winner: Address,
+    pub slot: u32,
+    pub winning_bid: i128,
+    pub bonus_per_member: i128,
+}
+
+pub fn emit_slot_auction_resolved(e: &Env, group_id: u32, winner: Address, slot: u32, winning_bid: i128, bonus_per_member: i128) {
+    SlotAuctionResolved { group_id, winner, slot, winning_bid, bonus_per_member }.publish(e);
+}
+
+// --- Cross-Group Migration Events ---
+
+/// Event: A member requested migration to another group
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct MigrationRequested {
+    pub member: Address,
+    pub src_contract: Address,
+    pub to_group: Address,
+}
+
+pub fn emit_migration_requested(e: &Env, member: Address, src_contract: Address, to_group: Address) {
+    MigrationRequested { member, src_contract, to_group }.publish(e);
+}
+
+/// Event: A member migration was executed into this group
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct MigrationExecuted {
+    pub member: Address,
+    pub from_group: Address,
+    pub dest_contract: Address,
+    pub target_slot: u32,
+}
+
+pub fn emit_migration_executed(e: &Env, member: Address, from_group: Address, dest_contract: Address, target_slot: u32) {
+    MigrationExecuted { member, from_group, dest_contract, target_slot }.publish(e);
+}
+
+// --- Proxy Authorization Events ---
+
+/// Event: A proxy authorization has expired
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct ProxyExpired {
+    pub group_id: u32,
+    pub member: Address,
+    pub proxy: Address,
+    pub expiry_ledger: u64,
+}
+
+pub fn emit_proxy_expired(e: &Env, group_id: u32, member: Address, proxy: Address, expiry_ledger: u64) {
+    ProxyExpired { group_id, member, proxy, expiry_ledger }.publish(e);
+}
+
+// ── Co-payer Contribution Splitting Events ────────────────────────────────────
+
+/// Event: Member registered co-payer splits for their contribution obligation.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CoPayerSplitRegistered {
+    pub member: Address,
+    pub co_payer_count: u32,
+    pub total_split_amount: i128,
+}
+
+/// Event: A co-payer contributed on behalf of a member.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CoPayerContributed {
+    pub member: Address,
+    pub co_payer: Address,
+    pub amount: i128,
+    pub round: u32,
+}
+
+/// Event: Member's co-payer split registration was revoked.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CoPayerSplitRevoked {
+    pub member: Address,
+}
+
+pub fn emit_co_payer_split_registered(e: &Env, member: Address, co_payer_count: u32, total_split_amount: i128) {
+    CoPayerSplitRegistered { member, co_payer_count, total_split_amount }.publish(e);
+}
+
+pub fn emit_co_payer_contributed(e: &Env, member: Address, co_payer: Address, amount: i128, round: u32) {
+    CoPayerContributed { member, co_payer, amount, round }.publish(e);
+}
+
+pub fn emit_co_payer_split_revoked(e: &Env, member: Address) {
+    CoPayerSplitRevoked { member }.publish(e);
+}
+
+// ── NFT-Style Contribution Receipt Events ─────────────────────────────────────
+
+/// Event: Contribution receipt minted for a member after a completed round.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct ContributionReceiptMinted {
+    pub receipt_id: u32,
+    pub member: Address,
+    pub round: u32,
+    pub amount_contributed: i128,
+    pub receipt_hash: BytesN<32>,
+}
+
+pub fn emit_contribution_receipt_minted(
+    e: &Env,
+    receipt_id: u32,
+    member: Address,
+    round: u32,
+    amount_contributed: i128,
+    receipt_hash: BytesN<32>,
+) {
+    ContributionReceiptMinted {
+        receipt_id,
+        member,
+        round,
+        amount_contributed,
+        receipt_hash,
+    }
+    .publish(e);
+}

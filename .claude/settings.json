@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(xargs ls -la)",
-      "Bash(python3)",
-      "Bash(awk 'NR>=5850 && NR<=5960 && /pub fn |fn [a-z]/' /Users/apple/ahjoorxmr-contract/contracts/ahjoor-payments/src/lib.rs)"
-    ]
-  }
-}

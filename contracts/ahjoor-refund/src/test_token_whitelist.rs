@@ -3,15 +3,21 @@
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
-    Address, Env, IntoVal, Map, String,
+    Address, BytesN, Env, IntoVal, Map, String,
 };
 
-fn create_token_contract<'a>(e: &Env) -> Address {
+fn create_token_contract(e: &Env) -> Address {
     e.register_stellar_asset_contract(Address::generate(e))
 }
 
+fn create_funded_token(e: &Env, admin: &Address, customer: &Address, amount: i128) -> Address {
+    let token_addr = e.register_stellar_asset_contract_v2(admin.clone()).address();
+    soroban_sdk::token::StellarAssetClient::new(e, &token_addr).mint(customer, &amount);
+    token_addr
+}
+
 fn create_whitelist_contract(e: &Env) -> Address {
-    e.register_contract_wasm(None, ahjoor_token_whitelist::WASM)
+    e.register(ahjoor_token_whitelist::TokenWhitelistContract, ())
 }
 
 fn create_refund_contract(e: &Env) -> Address {
@@ -19,7 +25,7 @@ fn create_refund_contract(e: &Env) -> Address {
 }
 
 fn create_payment_contract(e: &Env) -> Address {
-    e.register_contract_wasm(None, ahjoor_payments::WASM)
+    e.register(ahjoor_payments::AhjoorPaymentsContract, ())
 }
 
 #[test]
@@ -53,7 +59,8 @@ fn test_token_validation_in_refund_request() {
     let admin = Address::generate(&e);
     let customer = Address::generate(&e);
     let merchant = Address::generate(&e);
-    let token = create_token_contract(&e);
+    // 1000 for payment + 500 for refund escrow
+    let token = create_funded_token(&e, &admin, &customer, 1500);
     let payment_contract = create_payment_contract(&e);
     let refund_contract = create_refund_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
@@ -64,7 +71,7 @@ fn test_token_validation_in_refund_request() {
 
     // Initialize contracts
     refund_client.initialize(&admin, &payment_contract, &86400u64, &None);
-    payment_client.initialize(&admin);
+    payment_client.initialize(&admin, &admin, &0u32);
     whitelist_client.initialize(&admin);
 
     // Set whitelist contract in refund
@@ -76,13 +83,13 @@ fn test_token_validation_in_refund_request() {
         &merchant,
         &1000i128,
         &token,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
 
     // Complete the payment
-    payment_client.complete_payment(&merchant, &payment_id);
+    payment_client.complete_payment(&payment_id);
 
     // Try to request refund with non-whitelisted token - should fail
     let result = refund_client.try_request_refund(
@@ -116,7 +123,7 @@ fn test_token_validation_in_merchant_refund() {
     let admin = Address::generate(&e);
     let customer = Address::generate(&e);
     let merchant = Address::generate(&e);
-    let token = create_token_contract(&e);
+    let token = create_funded_token(&e, &admin, &customer, 1000);
     let payment_contract = create_payment_contract(&e);
     let refund_contract = create_refund_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
@@ -127,7 +134,7 @@ fn test_token_validation_in_merchant_refund() {
 
     // Initialize contracts
     refund_client.initialize(&admin, &payment_contract, &86400u64, &None);
-    payment_client.initialize(&admin);
+    payment_client.initialize(&admin, &admin, &0u32);
     whitelist_client.initialize(&admin);
 
     // Set whitelist contract in refund
@@ -139,13 +146,13 @@ fn test_token_validation_in_merchant_refund() {
         &merchant,
         &1000i128,
         &token,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
 
     // Complete the payment
-    payment_client.complete_payment(&merchant, &payment_id);
+    payment_client.complete_payment(&payment_id);
 
     // Try merchant refund with non-whitelisted token - should fail
     let result = refund_client.try_merchant_refund(&merchant, &payment_id, &500i128, &0u32);
@@ -207,7 +214,8 @@ fn test_backward_compatibility_without_whitelist() {
     let admin = Address::generate(&e);
     let customer = Address::generate(&e);
     let merchant = Address::generate(&e);
-    let token = create_token_contract(&e);
+    // 1000 for payment + 500 for request_refund escrow
+    let token = create_funded_token(&e, &admin, &customer, 1500);
     let payment_contract = create_payment_contract(&e);
     let refund_contract = create_refund_contract(&e);
 
@@ -216,7 +224,7 @@ fn test_backward_compatibility_without_whitelist() {
 
     // Initialize contracts without setting whitelist
     refund_client.initialize(&admin, &payment_contract, &86400u64, &None);
-    payment_client.initialize(&admin);
+    payment_client.initialize(&admin, &admin, &0u32);
 
     // Create a completed payment
     let payment_id = payment_client.create_payment(
@@ -224,11 +232,11 @@ fn test_backward_compatibility_without_whitelist() {
         &merchant,
         &1000i128,
         &token,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
-    payment_client.complete_payment(&merchant, &payment_id);
+    payment_client.complete_payment(&payment_id);
 
     // Should be able to request refund with any token (backward compatibility)
     let refund_id = refund_client.request_refund(
@@ -298,8 +306,9 @@ fn test_token_validation_with_multiple_tokens() {
     let admin = Address::generate(&e);
     let customer = Address::generate(&e);
     let merchant = Address::generate(&e);
-    let token1 = create_token_contract(&e);
-    let token2 = create_token_contract(&e);
+    // 1000 payment + 500 refund escrow for token1; 1000 payment only for token2 (request fails)
+    let token1 = create_funded_token(&e, &admin, &customer, 1500);
+    let token2 = create_funded_token(&e, &admin, &customer, 1000);
     let payment_contract = create_payment_contract(&e);
     let refund_contract = create_refund_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
@@ -310,7 +319,7 @@ fn test_token_validation_with_multiple_tokens() {
 
     // Initialize contracts
     refund_client.initialize(&admin, &payment_contract, &86400u64, &None);
-    payment_client.initialize(&admin);
+    payment_client.initialize(&admin, &admin, &0u32);
     whitelist_client.initialize(&admin);
     refund_client.set_token_whitelist_contract(&admin, &whitelist_contract);
 
@@ -329,22 +338,22 @@ fn test_token_validation_with_multiple_tokens() {
         &merchant,
         &1000i128,
         &token1,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
-    payment_client.complete_payment(&merchant, &payment_id1);
+    payment_client.complete_payment(&payment_id1);
 
     let payment_id2 = payment_client.create_payment(
         &customer,
         &merchant,
         &1000i128,
         &token2,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
-    payment_client.complete_payment(&merchant, &payment_id2);
+    payment_client.complete_payment(&payment_id2);
 
     // Refund request with token1 should succeed
     let refund_id1 = refund_client.request_refund(
@@ -382,7 +391,8 @@ fn test_token_delisting_prevents_new_refunds() {
     let admin = Address::generate(&e);
     let customer = Address::generate(&e);
     let merchant = Address::generate(&e);
-    let token = create_token_contract(&e);
+    // 1000 + 1000 for two payments + 500 for request_refund escrow on payment_id1
+    let token = create_funded_token(&e, &admin, &customer, 2500);
     let payment_contract = create_payment_contract(&e);
     let refund_contract = create_refund_contract(&e);
     let whitelist_contract = create_whitelist_contract(&e);
@@ -393,7 +403,7 @@ fn test_token_delisting_prevents_new_refunds() {
 
     // Initialize contracts
     refund_client.initialize(&admin, &payment_contract, &86400u64, &None);
-    payment_client.initialize(&admin);
+    payment_client.initialize(&admin, &admin, &0u32);
     whitelist_client.initialize(&admin);
     refund_client.set_token_whitelist_contract(&admin, &whitelist_contract);
 
@@ -406,22 +416,22 @@ fn test_token_delisting_prevents_new_refunds() {
         &merchant,
         &1000i128,
         &token,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
-    payment_client.complete_payment(&merchant, &payment_id1);
+    payment_client.complete_payment(&payment_id1);
 
     let payment_id2 = payment_client.create_payment(
         &customer,
         &merchant,
         &1000i128,
         &token,
-        &(e.ledger().timestamp() + 3600),
-        &None,
-        &None,
+        &None::<String>,
+        &None::<Map<String, String>>,
+        &None::<BytesN<32>>,
     );
-    payment_client.complete_payment(&merchant, &payment_id2);
+    payment_client.complete_payment(&payment_id2);
 
     // Request refund successfully
     let refund_id = refund_client.request_refund(

@@ -1,0 +1,12 @@
+[package]
+name = "ahjoor-errors"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Globally unique error code namespace registry for the Ahjoor protocol contracts"
+
+[lib]
+crate-type = ["lib"]
+doctest = false
+
+[dependencies]

@@ -81,9 +81,9 @@ fn test_create_stores_auto_renew_config() {
     let escrow = s.client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Active);
     assert_eq!(escrow.extensions.renewals_completed, 0);
-    let stored_cfg = escrow.extensions.auto_renew_config.expect("AutoRenewConfig should be stored");
-    assert_eq!(stored_cfg.max_renewals, 3);
-    assert_eq!(stored_cfg.renewal_interval_ledgers, 100);
+    let stored_max_renewals = escrow.extensions.auto_renew_max_renewals.expect("AutoRenewConfig should be stored");
+    assert_eq!(stored_max_renewals, 3);
+    assert_eq!(escrow.extensions.auto_renew_interval_ledgers.unwrap(), 100);
 }
 
 /// Normal release triggers renewal when renewals_completed < max_renewals.

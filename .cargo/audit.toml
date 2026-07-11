@@ -1,0 +1,27 @@
+# .cargo/audit.toml
+#
+# Configuration for `cargo audit`. Any suppressed advisory MUST be
+# documented here with a justification, an owner, and a re-review date.
+# Do not add an ignore entry without an accompanying comment explaining why
+# it is safe to ignore and when it will be revisited.
+
+[advisories]
+# Example (remove/replace once you have a real, justified suppression):
+#
+# ignore = [
+#   "RUSTSEC-2024-0001",  # transitive via soroban-sdk -> X -> Y
+#                          # Justification: vulnerable code path (Windows-only
+#                          # named pipe handling) is not reachable from this
+#                          # contract's no_std/WASM target.
+#                          # Owner: @ussyalfaks  Review-by: 2026-09-30
+# ]
+ignore = []
+
+# Treat unmaintained / yanked crates as warnings (the Makefile `audit`
+# target promotes warnings to failures with --deny warnings).
+informational_warnings = ["unmaintained", "yanked", "notice"]
+
+[database]
+# Fetch the latest advisory DB on every run (CI machines are ephemeral).
+fetch = true
+stale = false

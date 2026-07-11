@@ -157,6 +157,7 @@ fn test_floor_enforcement() {
             capture_deadline: 0,
             external_id: None,
             tipping_enabled: false,
+            extension_count: 0,
         }
     });
     // Floor was enforced — test passes if no panic
@@ -194,4 +195,66 @@ fn test_non_transferability() {
     let pid2 = client.create_payment(&customer, &merchant, &1_000_000, &token_addr, &None, &None, &None);
     let result = client.try_redeem_points(&other, &pid2, &1);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_points_reversed_on_refund() {
+    // 1 point per 1_000_000 units
+    let (env, client, admin, merchant, customer, token_addr) = setup_loyalty_with_token();
+    client.configure_loyalty(&admin, &1u32, &100u32, &0i128, &0u32);
+
+    // Complete a payment to accrue points
+    let pid_complete = client.create_payment(&customer, &merchant, &10_000_000, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid_complete);
+    assert_eq!(client.get_loyalty_balance(&customer), 10);
+
+    // Full refund via dispute_resolve: dispute a new pending payment for the same amount
+    let pid_dispute = client.create_payment(&customer, &merchant, &10_000_000, &token_addr, &None, &None, &None);
+    client.dispute_payment(&customer, &pid_dispute, &soroban_sdk::String::from_str(&env, "fraud"));
+    client.resolve_dispute(&pid_dispute, &false);
+
+    // 10 points should be reversed (10_000_000 * 1 / 1_000_000 = 10)
+    assert_eq!(client.get_loyalty_balance(&customer), 0);
+}
+
+#[test]
+fn test_partial_refund_proportional_reversal() {
+    // 1 point per 1_000_000 units
+    let (env, client, admin, merchant, customer, token_addr) = setup_loyalty_with_token();
+    client.configure_loyalty(&admin, &1u32, &100u32, &0i128, &0u32);
+
+    // Accrue 10 points
+    let pid_complete = client.create_payment(&customer, &merchant, &10_000_000, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid_complete);
+    assert_eq!(client.get_loyalty_balance(&customer), 10);
+
+    // Partial refund of 50% on a new disputed payment of the same amount
+    let pid_refund = client.create_payment(&customer, &merchant, &10_000_000, &token_addr, &None, &None, &None);
+    client.dispute_payment(&customer, &pid_refund, &soroban_sdk::String::from_str(&env, "partial issue"));
+    client.partial_refund(&pid_refund, &5_000_000); // 50% refund → reverse 5 points
+
+    // Balance should be 10 - 5 = 5
+    assert_eq!(client.get_loyalty_balance(&customer), 5);
+
+    // Second 50% refund → reverse remaining 5 points
+    client.partial_refund(&pid_refund, &5_000_000);
+    assert_eq!(client.get_loyalty_balance(&customer), 0);
+}
+
+#[test]
+fn test_points_balance_never_below_zero() {
+    let (env, client, admin, merchant, customer, token_addr) = setup_loyalty_with_token();
+    client.configure_loyalty(&admin, &1u32, &100u32, &0i128, &0u32);
+
+    // Accrue only 1 point from a small payment
+    let pid = client.create_payment(&customer, &merchant, &1_000_000, &token_addr, &None, &None, &None);
+    client.complete_payment(&pid);
+    assert_eq!(client.get_loyalty_balance(&customer), 1);
+
+    // Dispute and refund a much larger amount — reverse must clamp to 0
+    let pid_big = client.create_payment(&customer, &merchant, &100_000_000, &token_addr, &None, &None, &None);
+    client.dispute_payment(&customer, &pid_big, &soroban_sdk::String::from_str(&env, "overcharge"));
+    client.resolve_dispute(&pid_big, &false);
+
+    assert_eq!(client.get_loyalty_balance(&customer), 0);
 }

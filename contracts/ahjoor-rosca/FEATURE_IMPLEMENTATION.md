@@ -6,6 +6,9 @@ This document describes the three new features implemented in the Ahjoor ROSCA c
 
 Three major features have been added to enhance the ROSCA contract functionality:
 
+> **Migration note:** six storage keys were moved from `DataKey` into `DataKey2` to avoid the Soroban XDR 50-variant limit. Those keys preserve their original storage discriminants so existing on-chain state continues to resolve to the same slots after upgrade.
+
+
 1. **Protocol Fee on ROSCA Round Payouts** - Sustainable revenue for the protocol treasury
 2. **Partial Contribution Installments Within a Round** - Lower barrier to participation
 3. **Configurable Defaulter Suspension Threshold** - Flexible group tolerance levels

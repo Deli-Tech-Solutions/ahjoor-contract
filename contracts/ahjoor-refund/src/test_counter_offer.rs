@@ -114,7 +114,7 @@ fn test_counter_offer_expiry_escalates() {
 // Test: duplicate counter-offer rejected
 // ---------------------------------------------------------------------------
 #[test]
-#[should_panic(expected = "Counter-offer already submitted for this refund")]
+#[should_panic(expected = "Refund is not in Requested state")]
 fn test_duplicate_counter_offer_rejected() {
     let (_env, refund_client, _, _admin, _customer, merchant, _token_addr, _token_client, _) = setup_counter_offer();
     let refund_id = 0u32;

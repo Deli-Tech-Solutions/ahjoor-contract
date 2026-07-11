@@ -1,9 +1,11 @@
 #![cfg(test)]
 
-use crate::{AhjoorEscrowContract, AhjoorEscrowContractClient, BountyData, EscrowStatus};
+use crate::{
+    AhjoorEscrowContract, AhjoorEscrowContractClient, BountyMilestoneInput, EscrowStatus,
+};
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
-    token, Address, BytesN, Env, String,
+    token, vec, Address, BytesN, Env, String, Vec,
 };
 
 fn create_token_contract<'a>(e: &Env, admin: &Address) -> token::StellarAssetClient<'a> {
@@ -13,7 +15,7 @@ fn create_token_contract<'a>(e: &Env, admin: &Address) -> token::StellarAssetCli
 fn advance_ledger(e: &Env, delta_secs: u64) {
     e.ledger().set(LedgerInfo {
         timestamp: e.ledger().timestamp().saturating_add(delta_secs),
-        protocol_version: 20,
+        protocol_version: 23,
         sequence_number: e.ledger().sequence(),
         network_id: Default::default(),
         base_reserve: 10,
@@ -118,6 +120,7 @@ fn test_create_bounty_past_claim_deadline() {
     client.initialize(&admin);
 
     let description_hash = BytesN::from_array(&env, &[1u8; 32]);
+    advance_ledger(&env, 1000); // ensure timestamp > 100 so subtraction doesn't overflow
     let current_time = env.ledger().timestamp();
 
     client.create_bounty(
@@ -606,6 +609,79 @@ fn test_cancel_bounty_unclaimed() {
 
     let buyer_balance_after = token.balance(&buyer);
     assert_eq!(buyer_balance_after - buyer_balance_before, 500);
+}
+
+#[test]
+fn test_cancel_bounty_after_inspection_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let solver = Address::generate(&env);
+    let inspector = Address::generate(&env);
+    let verifier = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+
+    let token_sac = create_token_contract(&env, &token_admin);
+    token_sac.mint(&buyer, &1000);
+    let token_client = token::Client::new(&env, &token_sac.address);
+
+    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let client = AhjoorEscrowContractClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let current_time = env.ledger().timestamp();
+    let claim_deadline = current_time + 86400;
+    let submission_deadline = current_time + 172800;
+    let inspection_fee = 50;
+    let bounty_remainder = 450;
+    let milestones: Vec<BountyMilestoneInput> = vec![
+        &env,
+        BountyMilestoneInput {
+            description_hash: BytesN::from_array(&env, &[1u8; 32]),
+            verifier: inspector,
+            amount: inspection_fee,
+        },
+        BountyMilestoneInput {
+            description_hash: BytesN::from_array(&env, &[2u8; 32]),
+            verifier,
+            amount: bounty_remainder,
+        },
+    ];
+
+    let escrow_id = client.create_milestone_bounty(
+        &buyer,
+        &token_sac.address,
+        &milestones,
+        &claim_deadline,
+        &submission_deadline,
+    );
+
+    client.claim_bounty(&solver, &escrow_id);
+    client.submit_bounty_milestone(
+        &solver,
+        &escrow_id,
+        &0,
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
+    client.verify_bounty_milestone(&escrow_id, &0);
+
+    assert_eq!(token_client.balance(&contract_id), bounty_remainder);
+    assert_eq!(token_client.balance(&solver), inspection_fee);
+
+    advance_ledger(&env, 86401);
+
+    let buyer_balance_before = token_client.balance(&buyer);
+    client.cancel_bounty(&buyer, &escrow_id);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::Refunded);
+
+    let buyer_balance_after = token_client.balance(&buyer);
+    assert_eq!(buyer_balance_after - buyer_balance_before, bounty_remainder);
+    assert_eq!(token_client.balance(&contract_id), 0);
 }
 
 #[test]

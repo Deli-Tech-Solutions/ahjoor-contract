@@ -48,7 +48,7 @@ fn test_normal_finalization_after_cooling_off() {
     let escrow_id = 0u32;
     let cooling_off = 3600u64; // 1 hour
 
-    client.set_resolution_cooling_off_seconds(&admin, &cooling_off);
+    client.set_resolution_cooloff_secs(&admin, &cooling_off);
 
     // Arbiter resolves — should enter CoolingOff, NOT transfer funds
     let buyer_bal_before = token_client.balance(&buyer);
@@ -81,7 +81,7 @@ fn test_flagged_then_reviewed() {
     let escrow_id = 0u32;
     let cooling_off = 3600u64;
 
-    client.set_resolution_cooling_off_seconds(&admin, &cooling_off);
+    client.set_resolution_cooloff_secs(&admin, &cooling_off);
     client.resolve_dispute(&arbiter, &escrow_id, &0u32); // full seller win
 
     // Buyer (losing party) flags the resolution
@@ -109,7 +109,7 @@ fn test_flag_after_window_expired() {
     let escrow_id = 0u32;
     let cooling_off = 3600u64;
 
-    client.set_resolution_cooling_off_seconds(&admin, &cooling_off);
+    client.set_resolution_cooloff_secs(&admin, &cooling_off);
     client.resolve_dispute(&arbiter, &escrow_id, &0u32);
 
     // Advance past cooling-off
@@ -129,7 +129,7 @@ fn test_finalize_before_window_elapsed() {
     let escrow_id = 0u32;
     let cooling_off = 3600u64;
 
-    client.set_resolution_cooling_off_seconds(&admin, &cooling_off);
+    client.set_resolution_cooloff_secs(&admin, &cooling_off);
     client.resolve_dispute(&arbiter, &escrow_id, &50u32);
 
     // Try to finalize immediately — should panic

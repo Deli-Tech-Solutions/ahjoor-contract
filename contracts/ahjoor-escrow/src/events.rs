@@ -802,7 +802,8 @@ pub fn emit_escrow_metadata_updated(
 #[derive(Clone, Debug)]
 pub struct MultiPartyEscrowCreated {
     pub escrow_id: u32,
-    pub sellers_count: u32,
+    pub buyer_count: u32,
+    pub total_amount: i128,
 }
 
 /// Event: Multi-party escrow released with distributions
@@ -813,10 +814,11 @@ pub struct MultiPartyEscrowReleased {
     pub total_amount: i128,
 }
 
-pub fn emit_multi_party_escrow_created(e: &Env, escrow_id: u32, sellers_count: u32) {
+pub fn emit_multi_party_escrow_created(e: &Env, escrow_id: u32, buyer_count: u32, total_amount: i128) {
     MultiPartyEscrowCreated {
         escrow_id,
-        sellers_count,
+        buyer_count,
+        total_amount,
     }
     .publish(e);
 }
@@ -1269,7 +1271,11 @@ pub fn emit_multi_seller_escrow_released(
     escrow_id: u32,
     distributions: Vec<(Address, i128)>,
 ) {
-    MultiSellerEscrowReleased { escrow_id, distributions }.publish(env);
+    MultiSellerEscrowReleased {
+        escrow_id,
+        distributions,
+    }
+    .publish(env);
 }
 
 pub fn emit_seller_share_delegated(
@@ -1278,7 +1284,12 @@ pub fn emit_seller_share_delegated(
     original_seller: Address,
     delegate: Address,
 ) {
-    SellerShareDelegated { escrow_id, original_seller, delegate }.publish(env);
+    SellerShareDelegated {
+        escrow_id,
+        original_seller,
+        delegate,
+    }
+    .publish(env);
 }
 
 
@@ -1288,7 +1299,12 @@ pub fn emit_conditional_release_triggered(
     oracle_contract: Address,
     condition_value: i128,
 ) {
-    ConditionalReleaseTriggered { escrow_id, oracle_contract, condition_value }.publish(env);
+    ConditionalReleaseTriggered {
+        escrow_id,
+        oracle_contract,
+        condition_value,
+    }
+    .publish(env);
 }
 
 pub fn emit_release_condition_waived(env: &Env, escrow_id: u32) {
@@ -1484,6 +1500,9 @@ pub fn emit_partial_release_rejected(
     .publish(e);
 }
 
+// --- Issue #420: Seller Veto Cooldown ---
+
+/// Event: Seller raised a veto to block fund release.
 // ── #319: Bounty Board Events ─────────────────────────────────────────────────
 
 /// Event: Bounty created with open competitive work assignment
@@ -1691,8 +1710,7 @@ pub struct SellerVetoCancelled {
 pub struct VetoOverridden {
     pub escrow_id: u32,
     pub admin: Address,
-    pub reason_hash: BytesN<32>,
-    pub elapsed_seconds: u64,
+    pub overridden_at: u64,
 }
 
 pub fn emit_seller_veto_raised(e: &Env, escrow_id: u32, seller: Address, veto_timestamp: u64) {
@@ -1703,14 +1721,8 @@ pub fn emit_seller_veto_cancelled(e: &Env, escrow_id: u32, seller: Address) {
     SellerVetoCancelled { escrow_id, seller }.publish(e);
 }
 
-pub fn emit_veto_overridden(
-    e: &Env,
-    escrow_id: u32,
-    admin: Address,
-    reason_hash: BytesN<32>,
-    elapsed_seconds: u64,
-) {
-    VetoOverridden { escrow_id, admin, reason_hash, elapsed_seconds }.publish(e);
+pub fn emit_veto_overridden(e: &Env, escrow_id: u32, admin: Address, overridden_at: u64) {
+    VetoOverridden { escrow_id, admin, overridden_at }.publish(e);
 }
 
 // ── #376: Bounty Board Milestone Gating Events ───────────────────────────────
@@ -1746,7 +1758,10 @@ pub struct MilestoneVerified {
     pub verifier: Address,
 }
 
-pub struct BountyMilestoneVerifierReplaced {
+/// Event: The designated verifier for a still-pending milestone was replaced.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct BountyVerifierReplaced {
     pub escrow_id: u32,
     pub index: u32,
     pub old_verifier: Address,
@@ -1808,8 +1823,25 @@ pub fn emit_bounty_milestone_verifier_replaced(
     old_verifier: Address,
     new_verifier: Address,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "BountyVerifierReplaced"),),
-        (escrow_id, index, old_verifier, new_verifier),
-    );
+    BountyVerifierReplaced {
+        escrow_id,
+        index,
+        old_verifier,
+        new_verifier,
+    }
+    .publish(e);
+}
+
+// ── Fee Withdrawal Events ─────────────────────────────────────────────────
+
+/// Event: Admin withdrew accumulated protocol fees
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct FeesWithdrawn {
+    pub amount: i128,
+    pub destination: Address,
+}
+
+pub fn emit_fees_withdrawn(e: &Env, amount: i128, destination: Address) {
+    FeesWithdrawn { amount, destination }.publish(e);
 }

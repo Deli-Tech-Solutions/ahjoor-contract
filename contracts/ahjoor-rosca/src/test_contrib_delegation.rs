@@ -1,5 +1,5 @@
 #![cfg(test)]
-use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, Vec};
 use soroban_sdk::token::StellarAssetClient as TokenAdminClient;
 use soroban_sdk::token::Client as TokenClient;
 
@@ -23,6 +23,13 @@ fn make_config(env: &Env) -> RoscaConfig {
         skip_fee: 0,
         max_skips_per_cycle: 5,
         voting_mode: VotingMode::Equal,
+        late_fee_bps: 0,
+        grace_period_seconds: 0,
+        auction_enabled: false,
+        auction_window_ledgers: 0,
+        randomize_payout_order: false,
+        reserve_enabled: false,
+        reserve_contribution_bps: 0,
     }
 }
 
@@ -71,7 +78,7 @@ fn test_delegate_and_get_delegation() {
 
     let rec = client.get_member_delegation(&0u32, &member).unwrap();
     assert_eq!(rec.proxy, proxy);
-    assert_eq!(rec.expiry_ledger, expiry);
+    assert_eq!(rec.expiry, expiry);
 }
 
 #[test]

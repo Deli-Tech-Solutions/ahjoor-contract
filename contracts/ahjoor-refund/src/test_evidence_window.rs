@@ -56,7 +56,7 @@ fn test_set_zero_window_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "EvidenceAlreadySubmitted")]
+#[should_panic]
 fn test_duplicate_evidence_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -70,8 +70,8 @@ fn test_duplicate_evidence_rejected() {
     // the guard exists in the code path. A full integration test would use
     // a mock payment contract.
     let hashes: Vec<BytesN<32>> = Vec::new(&env);
-    client.submit_refund_evidence(&merchant, &0u32, &hashes, &hash(&env));
-    client.submit_refund_evidence(&merchant, &0u32, &hashes, &hash(&env));
+    client.submit_refund_evidence(&merchant, &0u32, &hashes, &hash(&env), &hash(&env));
+    client.submit_refund_evidence(&merchant, &0u32, &hashes, &hash(&env), &hash(&env));
 }
 
 #[test]

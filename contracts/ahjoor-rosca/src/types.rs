@@ -37,7 +37,7 @@ pub struct RoscaConfig {
     pub fee_recipient: Option<Address>,
     /// Number of consecutive missed rounds before suspension (default: 3)
     pub max_defaults: u32,
-    /// Additional ledgers (time units) before penalties are applied after deadline.
+    /// Additional ledgers before penalties are applied after deadline (ledger-mode groups).
     pub grace_period_ledgers: u32,
     pub use_timestamp_schedule: bool,
     pub round_duration_seconds: u64,
@@ -119,6 +119,7 @@ pub enum ProposalType {
     MemberRemoval = 2,
     MaxMembersUpdate = 3,
     Reinstatement = 4, // #218
+    MemberFreeze = 5,  // Member-initiated emergency freeze
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,16 +210,10 @@ pub enum DataKey {
     VotingDeadline,          // u64
     QuorumPercentage,        // u32 (e.g., 51 for 51%)
     MemberContributions,     // Map<Address, i128> cumulative per round
-    ProposedAdmin,           // Address — proposed new admin (pending acceptance)
-    ContractVersion,         // u32
     FeeBps,                  // u32 — protocol fee in basis points
-    FeeRecipient,            // Address — receives protocol fees
     MaxDefaults,             // u32 — suspension threshold
-    UseTimestampSchedule,    // bool
-    RoundDurationSeconds,    // u64
     RoundDeadlineTimestamp,  // u64
     MaxMembers,              // u32
-    MemberTiers,             // Map<Address, u32>
 }
 
 /// Overflow key enum — DataKey is capped at 50 variants by the soroban XDR limit.
@@ -226,75 +221,92 @@ pub enum DataKey {
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey2 {
-    InsurancePool,           // i128
-    InsuranceContributionBps, // u32
-    SkipFee,                 // i128
-    MaxSkipsPerCycle,        // u32
-    SkipRequests,            // Map<(Address, u32), bool>
-    MemberSkips,             // Map<(Address, u32), u32>
-    QuorumConfig,            // Map<ProposalType, u32>
-    VotingMode,              // VotingMode
-    ReinvestPreference,      // Map<Address, bool>
-    ExitRequests,            // Map<Address, ExitRequest>
-    /// Token whitelist contract address
-    TokenWhitelistContract,  // Address
-    // Audit Trail
-    CycleRecords,            // Map<u32, CycleRecord> — per-cycle audit trail
-    CycleRecordRetentionWindow, // u32 — number of cycles to retain in persistent storage
-    ArchivedCycleRecords,    // Map<u32, CycleRecord> — archived records in temporary storage
-    CycleStartTimestamps,    // Map<u32, u64> — track when each cycle started
-    // Emergency Payout
-    EmergencyPayoutConfig,   // EmergencyPayoutConfig
-    EmergencyPayoutRequests, // Map<(u32, Address), EmergencyPayoutRequest> — (round, requester)
-    EmergencyPayoutVotes,    // Map<(u32, Address, Address), bool> — (round, requester, voter)
-    EmergencyPayoutCount,    // Map<u32, u32> — (cycle, count) — emergency payouts per cycle
-    EmergencyPayoutApproved, // Map<(u32, Address), bool> — (round, requester) — track approved emergency payouts per cycle
-    // Group Dissolution
-    GroupStatus,             // GroupStatus
-    DissolutionConfig,       // DissolutionConfig
-    DissolutionVotes,        // Map<(u32, Address), bool> — (round, voter)
-    DissolutionVoteCount,    // Map<u32, i128> — (round, votes_for)
-    DissolutionDeadline,     // Map<u32, u64> — (round, deadline)
-    // #213: Payout Slot Swap
-    SlotSwapCounter,
-    SlotSwaps,               // Map<u32, SlotSwap>
-    SlotSwapRequiresAdmin,   // bool
-    SlotSwapExpirySeconds,   // u64
-    // #214: Insurance Coverage
-    InsuranceCoverageMode,   // InsuranceCoverageMode
-    InsuranceClaims,         // Map<u32, Vec<InsuranceClaim>>
-    // #218: Reinstatement
-    ReinstatementFee,        // i128
-    PendingReinstatementFee, // Vec<Address>
-    ActiveReinstatementProposal, // Map<Address, u32>
-    // Waitlist (#219)
-    Waitlist,                // Vec<(Address, u64)> — (address, joined_at)
-    CatchUpDebt,             // Map<Address, i128> — catch-up contributions owed
-    // #230: Group Merge
-    MergeProposalCounter,    // u32
-    MergeProposals,          // Map<u32, MergeProposal>
-    GroupMergedInto,         // u32 — target group_id this group was merged into
-    // #224: Cycle Completion Bonus
-    CycleBonusAmount,        // i128 — bonus per qualifying member per cycle
-    // #227: Round Duration Update
-    PendingRoundDuration,    // u64 — new duration to apply at next round start
-    MinRoundDuration,        // u64 — lower bound for round duration
-    MaxRoundDuration,        // u64 — upper bound for round duration
-    // Waitlist (#219)
-    StartAt,                 // u64
-    GroupActivationEmitted,  // bool
-    GracePeriodLedgers,      // u32
-    PendingPenalties,        // Map<Address, u32> (member -> round)
-    LastRoundDeadline,       // u64
-    // #240: Co-Signer Guarantee
-    CoSigners,               // Map<Address, CoSignerRecord> — member → co-signer record
-    CoSignerWindowLedgers,   // u32 — grace period ledgers before penalty applied
+    // Preserved discriminants for keys moved from `DataKey` to maintain storage slot identity.
+    ProposedAdmin = 40,      // Address — proposed new admin (pending acceptance)
+    ContractVersion = 41,    // u32
+    FeeRecipient = 43,       // Address — receives protocol fees
+    UseTimestampSchedule = 45,    // bool
+    RoundDurationSeconds = 46,    // u64
+    MemberTiers = 49,             // Map<Address, u32>
+
+    InsurancePool = 50,
+    InsuranceContributionBps = 51,
+    SkipFee = 52,
+    MaxSkipsPerCycle = 53,
+    SkipRequests = 54,
+    MemberSkips = 55,
+    QuorumConfig = 56,
+    VotingMode = 57,
+    ReinvestPreference = 58,
+    ExitRequests = 59,
+    TokenWhitelistContract = 60,
+    CycleRecords = 61,
+    CycleRecordRetentionWindow = 62,
+    ArchivedCycleRecords = 63,
+    CycleStartTimestamps = 64,
+    EmergencyPayoutConfig = 65,
+    EmergencyPayoutRequests = 66,
+    EmergencyPayoutVotes = 67,
+    EmergencyPayoutCount = 68,
+    EmergencyPayoutApproved = 69,
+    GroupStatus = 70,
+    DissolutionConfig = 71,
+    DissolutionVotes = 72,
+    DissolutionVoteCount = 73,
+    DissolutionDeadline = 74,
+    SlotSwapCounter = 75,
+    SlotSwaps = 76,
+    SlotSwapRequiresAdmin = 77,
+    SlotSwapExpirySeconds = 78,
+    InsuranceCoverageMode = 79,
+    InsuranceClaims = 80,
+    ReinstatementFee = 81,
+    PendingReinstatementFee = 82,
+    ActiveReinstatementProposal = 83,
+    Waitlist = 84,
+    CatchUpDebt = 85,
+}
+
+/// Overflow key enum for merge and round-duration keys (#230, #227).
+#[derive(Clone)]
+#[contracttype]
+pub enum DataKey4 {
+    MergeProposalCounter = 86,
+    MergeProposals = 87,
+    GroupMergedInto = 88,
+    CycleBonusAmount = 89,
+    PendingRoundDuration = 90,
+    MinRoundDuration = 91,
+    MaxRoundDuration = 92,
+    StartAt = 93,
+    GroupActivationEmitted = 94,
+    GracePeriodLedgers = 95,
+    PendingPenalties = 96,
+    LastRoundDeadline = 97,
+    CoSigners = 98,
+    CoSignerWindowLedgers = 99,
+}
+
+/// Waitlist ordering mode (#456).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[contracttype]
+pub enum WaitlistMode {
+    /// First-in-first-out; earliest `joined_at` is promoted first (default).
+    Fifo = 0,
+    /// Highest `PersistentKey::ReputationScores` candidate is promoted first.
+    ReputationWeighted = 1,
 }
 
 /// Overflow key enum — DataKey2 is capped at 50 variants by the soroban XDR limit.
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey3 {
+    // #315: Payout Order Randomization
+    RandomizePayoutOrder,    // bool — enable randomization for this group
+    PayoutOrderSeed,         // BytesN<32> — seed for Fisher-Yates shuffle
+    PayoutOrderFinalized,    // bool — track if order has been finalized
+    // #352: Contribution Rebalancing
+    BasePoolTarget,          // i128 — immutable payout target per cycle (initial_members × contribution_amount)
     CoSignerWindowStart,     // Map<Address, u32> — member → ledger when window opened (#240)
     ProxyAuthorizations,     // Map<(u32, Address), ProxyAuthorization> — (group_id, member)
     IsFrozen,                // bool — group is frozen by contract-level admin (#236)
@@ -305,65 +317,87 @@ pub enum DataKey3 {
     // #269: On-Chain Member Credit Score
     ScoreWeights,            // ScoreWeights — admin-configurable scoring formula weights
     MinCreditScore,          // i128 — minimum score required to join this group
+    // #398: Contribution-weight voting delegation
+    ContribDelegations,      // Map<Address, ContribDelegationRecord>
+    // Member freeze proposal context
+    MemberFreezeReasons,     // Map<u32, BytesN<32>> — proposal_id -> freeze reason hash
+    // #390: Timestamp-mode grace period
+    GracePeriodSeconds,      // u64 — grace window in seconds (used when UseTimestampSchedule=true)
+    // Reputation-gated fee discount
+    RepFeeDiscount,
     // Slot Auction
-    AuctionEnabled,          // bool — auction feature flag
-    AuctionWindowLedgers,    // u64 — bidding window duration in seconds
-    AuctionOpenUntil,        // u64 — timestamp when current auction window closes (0 = no open auction)
-    AuctionBids,             // Vec<SlotBid> — bids placed in the current auction
-    AuctionRound,            // u32 — the round for which the current auction was opened
+    AuctionEnabled,
+    AuctionWindowLedgers,
+    AuctionOpenUntil,
+    AuctionBids,
+    AuctionRound,
     // Cross-Group Migration
-    MigrationRequests,       // Map<Address, MigrationRequest> — member → pending outbound migration
-    IncomingMigrations,      // Map<Address, IncomingMigration> — member → pending inbound migration
-    MigratedMembers,         // Map<Address, MigratedMemberRecord> — member → migration annotation
-    VacantSlots,             // Vec<u32> — slot indices freed by migrated-out members
+    MigrationRequests,
+    IncomingMigrations,
+    MigratedMembers,
+    VacantSlots,
     // #313: Emergency Liquidity Reserve
-    EmergencyReserveBalance, // i128 — total balance in emergency reserve
-    EmergencyLoanCounter,    // u32 — counter for loan IDs
-    EmergencyLoan(u32),      // loan_id → EmergencyLoan record
-    MemberOutstandingLoan(Address), // member → active loan_id
-    /// #314: Group treasury configuration
-    TreasuryConfig,          // TreasuryConfig
-    /// #314: Group treasury balance
-    TreasuryBalance,         // i128
-    /// #314: Treasury round proposals per round
-    TreasuryRoundProposal(u32), // (round_index) → TreasuryRoundProposal
-    /// #314: Treasury round votes per member
-    TreasuryRoundVotes(u32, Address), // (round_index, member) → bool
-    // #330: Contribution Delegation
-    ContribDelegations,      // Map<Address, ContribDelegationRecord> — member → delegation
+    ReserveEnabled,
+    EmergencyReserveBalance,
+    EmergencyLoanCounter,
+    EmergencyLoan(u32),
+    MemberOutstandingLoan(Address),
+    // #314: Group treasury
+    TreasuryConfig,
+    TreasuryBalance,
+    TreasuryRoundProposal(u32),
+    TreasuryRoundVotes(u32, Address),
     // #331: Group Split
-    SplitProposalCounter,    // u32
-    SplitProposals,          // Map<u32, SplitProposal>
-    SplitConfirmationWindow, // u32 — ledgers members have to confirm
+    SplitProposalCounter,
+    SplitProposals,
+    SplitConfirmationWindow,
     // #356: Penalty-Based Slot Demotion
-    LateContributionCount,   // Map<Address, u32> — consecutive late payment count per member
-    LateContribThreshold,    // u32 — late payments before demotion is triggered (default: 3)
-    GracePeriodSeconds,      // u64 — seconds after deadline during which late payments are accepted
-    ReserveEnabled,          // bool
-    // #315: Payout Order Randomization
-    RandomizePayoutOrder,    // bool — enable randomization for this group
-    PayoutOrderSeed,         // BytesN<32> — seed for Fisher-Yates shuffle
-    PayoutOrderFinalized,    // bool — track if order has been finalized
-    // #352: Contribution Rebalancing
-    BasePoolTarget,          // i128 — immutable payout target per cycle (initial_members × contribution_amount)
+    LateContributionCount,
+    LateContribThreshold,
     // #359: Savings goal milestone reward pool
-    SavingsRewardPool,       // i128 — token balance held for savings goal milestone rewards
-    SavingsMilestonesClaimed(u32, Address), // (goal_id, member) → u64
+    SavingsRewardPool,
+    SavingsMilestonesClaimed(u32, Address),
     // #375: Sealed-bid (commit-reveal) slot auction
-    SealedAuction,             // SealedAuctionState — config + current phase state
-    SlotBidCommit(u32, Address), // (round, bidder) → SealedCommit
-    SealedCommitters(u32),     // (round) → Vec<Address> — everyone who committed this round
-    SealedRevealedBids(u32),   // (round) → Vec<SlotBid> — valid revealed bids this round
+    SealedAuction,
+    SlotBidCommit(u32, Address),
+    SealedCommitters(u32),
+    SealedRevealedBids(u32),
+    // Co-payer contribution splitting
+    CoPayerSplits(Address),
+    // NFT-style contribution receipts
+    ContributionReceiptCounter,
+    ContributionReceipt(u32),
+    MemberReceiptIds(Address),
+    // #456: Waitlist priority ordering mode
+    WaitlistPriorityMode,       // WaitlistMode — settable by admin
 }
 
+/// Overflow key enum — DataKey3 is capped at 50 variants by the soroban XDR limit.
+#[derive(Clone)]
+#[contracttype]
+pub enum DataKey5 {
+    // #454: Collective goal reward pool
+    GoalRewardPool,             // i128 — funded by admin, distributed once collective_goal is reached
+    GoalRewardDistributed,
+}
+
+
 // ── #330: Contribution Delegation ────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[contracttype]
+pub enum ExpiryMode {
+    Ledger = 0,
+    Timestamp = 1,
+}
 
 /// Delegation record granting a proxy the right to act for a member.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContribDelegationRecord {
     pub proxy: Address,
-    pub expiry_ledger: u64,
+    pub expiry: u64,
+    pub expiry_mode: ExpiryMode,
 }
 
 // ── #331: Group Split ─────────────────────────────────────────────────────────
@@ -404,6 +438,8 @@ pub enum PersistentKey {
     MemberCreditScores,        // Map<Address, MemberScore> — per-member credit score (#269)
     /// #364: Point-in-time cycle snapshot keyed by cycle number
     CycleSnapshot(u32),        // cycle_number → CycleSnapshotData
+    /// #457: Ledger at which a member's credit score was last updated (cross-contract oracle)
+    CreditScoreUpdatedAt(Address), // u32 — ledger sequence of last credit score update
 }
 
 /// #364: Immutable point-in-time snapshot of group state at cycle end.
@@ -778,4 +814,52 @@ pub struct TreasuryRoundProposal {
     pub votes_for: i128,
     pub votes_against: i128,
     pub confirmed: bool,
+}
+
+/// Members whose `MemberScore.score` >= `threshold` pay `discount_bps` fewer
+/// protocol-fee basis points on their payout round (floor: 0 bps).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepFeeDiscountConfig {
+    pub threshold: i128,
+    pub discount_bps: u32,
+}
+
+/// A single co-payer who covers part of a member's ROSCA contribution.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoPayerSplit {
+    pub co_payer: Address,
+    pub amount: i128,
+}
+
+/// NFT-style on-chain receipt minted when a round completes for each contributing member.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContributionReceipt {
+    pub receipt_id: u32,
+    pub member: Address,
+    pub round: u32,
+    pub amount_contributed: i128,
+    pub token: Address,
+    pub minted_at: u64,
+    pub receipt_hash: BytesN<32>,
+}
+
+/// Aggregate read-only statistics returned by `get_group_analytics`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupAnalytics {
+    pub total_members: u32,
+    pub active_members: u32,
+    pub suspended_count: u32,
+    pub exited_count: u32,
+    pub current_round: u32,
+    pub total_rounds: u32,
+    pub paid_this_round: u32,
+    pub defaulters_this_round: u32,
+    pub total_contributions_collected: i128,
+    pub avg_credit_score: i128,
+    pub avg_reputation_score: i128,
+    pub fee_bps: u32,
 }

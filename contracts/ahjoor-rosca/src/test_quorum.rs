@@ -56,6 +56,9 @@ fn test_per_type_quorum_enforced() {
         grace_period_seconds: 0,
         auction_enabled: false,
         auction_window_ledgers: 0,
+        randomize_payout_order: false,
+        reserve_enabled: false,
+        reserve_contribution_bps: 0,
         },
         &None,
     );
@@ -151,6 +154,9 @@ fn test_proposal_respects_quorum_at_creation() {
         grace_period_seconds: 0,
         auction_enabled: false,
         auction_window_ledgers: 0,
+        randomize_payout_order: false,
+        reserve_enabled: false,
+        reserve_contribution_bps: 0,
         }, &None);
 
     let creator = members.get(0).unwrap();
@@ -174,4 +180,68 @@ fn test_proposal_respects_quorum_at_creation() {
     assert_eq!(prop.status, ProposalStatus::Executed); // Still used 51% from creation time
 }
 
+#[test]
+fn test_treasury_round_requires_quorum() {
+    let (env, client, admin, token_admin, members) = setup_with_members(10);
 
+    client.init(&admin, &members, &100, &token_admin, &3600, &RoscaConfig {
+        strategy: PayoutStrategy::RoundRobin,
+        custom_order: None, penalty_amount: 0, exit_penalty_bps: 0,
+        collective_goal: None, member_goals: None, fee_bps: 0, fee_recipient: None,
+        max_defaults: 3, grace_period_ledgers: 0, grace_period_seconds: 0,
+        use_timestamp_schedule: false, round_duration_seconds: 0, max_members: None,
+        skip_fee: 0, max_skips_per_cycle: 0, voting_mode: VotingMode::Equal,
+        late_fee_bps: 0, auction_enabled: false, auction_window_ledgers: 0,
+        randomize_payout_order: false, reserve_enabled: false, reserve_contribution_bps: 0,
+    }, &None);
+
+    let proposer = members.get(0).unwrap();
+    let purpose = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+
+    // Set quorum for RuleChange to 51%
+    client.set_quorum_per_type(&admin, &ProposalType::RuleChange, &5_100);
+
+    client.propose_treasury_round(&proposer, &0, &purpose);
+
+    // Single-member vote must NOT confirm in a 10-member group (1 < 51% of 10 = 5)
+    client.vote_treasury_round(&proposer, &0, &true);
+    let proposal = client.get_treasury_round_proposal(&0);
+    assert!(!proposal.confirmed);
+
+    // Vote 4 more (total 5 = 50%) — still not enough
+    for i in 1..5 {
+        client.vote_treasury_round(&members.get(i).unwrap(), &0, &true);
+    }
+    let proposal = client.get_treasury_round_proposal(&0);
+    assert!(!proposal.confirmed);
+
+    // 6th vote (60%) — quorum reached
+    client.vote_treasury_round(&members.get(5).unwrap(), &0, &true);
+    let proposal = client.get_treasury_round_proposal(&0);
+    assert!(proposal.confirmed);
+}
+
+#[test]
+fn test_treasury_round_vote_non_member_rejected() {
+    let (env, client, admin, token_admin, members) = setup_with_members(3);
+
+    client.init(&admin, &members, &100, &token_admin, &3600, &RoscaConfig {
+        strategy: PayoutStrategy::RoundRobin,
+        custom_order: None, penalty_amount: 0, exit_penalty_bps: 0,
+        collective_goal: None, member_goals: None, fee_bps: 0, fee_recipient: None,
+        max_defaults: 3, grace_period_ledgers: 0, grace_period_seconds: 0,
+        use_timestamp_schedule: false, round_duration_seconds: 0, max_members: None,
+        skip_fee: 0, max_skips_per_cycle: 0, voting_mode: VotingMode::Equal,
+        late_fee_bps: 0, auction_enabled: false, auction_window_ledgers: 0,
+        randomize_payout_order: false, reserve_enabled: false, reserve_contribution_bps: 0,
+    }, &None);
+
+    let proposer = members.get(0).unwrap();
+    let outsider = Address::generate(&env);
+    let purpose = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+
+    client.propose_treasury_round(&proposer, &0, &purpose);
+
+    let err = client.try_vote_treasury_round(&outsider, &0, &true).unwrap_err().unwrap();
+    assert_eq!(err, Error::NotAMember.into());
+}

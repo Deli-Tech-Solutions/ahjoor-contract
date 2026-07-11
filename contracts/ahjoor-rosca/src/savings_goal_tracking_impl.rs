@@ -83,14 +83,14 @@ impl SavingsGoalTrackingImpl {
         };
 
         // Store goal
-        let key = GoalStorageKey::Goal(next_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), next_id);
         env.storage().persistent().set(&key, &goal);
         env.storage()
             .instance()
             .set(&Symbol::new(env, GOAL_COUNTER_KEY), &next_id);
 
         // Add to member goals list
-        let member_key = GoalStorageKey::MemberGoals(member.clone());
+        let member_key = (Symbol::new(env, MEMBER_GOALS_KEY_PREFIX), member.clone());
         let mut member_goals: Vec<u32> = env
             .storage()
             .persistent()
@@ -100,7 +100,7 @@ impl SavingsGoalTrackingImpl {
         env.storage().persistent().set(&member_key, &member_goals);
 
         // Add to group goals list
-        let group_key = GoalStorageKey::GroupGoals(group_id);
+        let group_key = (Symbol::new(env, GROUP_GOALS_KEY_PREFIX), group_id);
         let mut group_goals: Vec<u32> = env
             .storage()
             .persistent()
@@ -114,7 +114,7 @@ impl SavingsGoalTrackingImpl {
 
     /// Add milestones to a goal
     pub fn add_milestones(env: &Env, goal_id: u32, milestones: Vec<Milestone>) {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -153,7 +153,7 @@ impl SavingsGoalTrackingImpl {
             panic_with_error!(env, SavingsGoalError::InvalidContribution);
         }
 
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -222,7 +222,7 @@ impl SavingsGoalTrackingImpl {
         };
 
         // Store contribution
-        let contribution_key = GoalStorageKey::Contribution(next_contribution_id);
+        let contribution_key = (Symbol::new(env, CONTRIBUTION_KEY_PREFIX), next_contribution_id);
         env.storage().persistent().set(&contribution_key, &contribution);
 
         // Store updated goal
@@ -319,13 +319,13 @@ impl SavingsGoalTrackingImpl {
 
     /// Get goal details
     pub fn get_goal(env: &Env, goal_id: u32) -> Option<SavingsGoal> {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         env.storage().persistent().get(&key)
     }
 
     /// Get goal progress
     pub fn get_goal_progress(env: &Env, goal_id: u32) -> GoalProgress {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -372,7 +372,7 @@ impl SavingsGoalTrackingImpl {
     pub fn check_and_celebrate_milestones(env: &Env, goal_id: u32) -> Vec<MilestoneCelebration> {
         let mut celebrations = Vec::new(env);
 
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -412,7 +412,7 @@ impl SavingsGoalTrackingImpl {
                 goal.completed_milestones.push_back(milestone.milestone_id);
 
                 // Store celebration
-                let celebration_key = GoalStorageKey::Celebration(celebration.celebration_id);
+                let celebration_key = (Symbol::new(env, CELEBRATION_KEY_PREFIX), celebration.celebration_id);
                 env.storage().persistent().set(&celebration_key, &celebration);
             }
         }
@@ -428,7 +428,7 @@ impl SavingsGoalTrackingImpl {
         milestone_id: u32,
         message: String,
     ) -> MilestoneCelebration {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -465,7 +465,7 @@ impl SavingsGoalTrackingImpl {
         };
 
         // Store celebration
-        let celebration_key = GoalStorageKey::Celebration(celebration_id);
+        let celebration_key = (Symbol::new(env, CELEBRATION_KEY_PREFIX), celebration_id);
         env.storage().persistent().set(&celebration_key, &celebration);
 
         celebration
@@ -477,7 +477,7 @@ impl SavingsGoalTrackingImpl {
         celebration_id: u32,
         reward_details: Map<String, String>,
     ) {
-        let celebration_key = GoalStorageKey::Celebration(celebration_id);
+        let celebration_key = (Symbol::new(env, CELEBRATION_KEY_PREFIX), celebration_id);
         let mut celebration: MilestoneCelebration = env
             .storage()
             .persistent()
@@ -492,7 +492,7 @@ impl SavingsGoalTrackingImpl {
 
     /// Complete a goal
     pub fn complete_goal(env: &Env, goal_id: u32) -> MilestoneCelebration {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -523,7 +523,7 @@ impl SavingsGoalTrackingImpl {
         };
 
         // Store celebration
-        let celebration_key = GoalStorageKey::Celebration(celebration_id);
+        let celebration_key = (Symbol::new(env, CELEBRATION_KEY_PREFIX), celebration_id);
         env.storage().persistent().set(&celebration_key, &celebration);
 
         // Store updated goal
@@ -534,7 +534,7 @@ impl SavingsGoalTrackingImpl {
 
     /// Pause a goal
     pub fn pause_goal(env: &Env, goal_id: u32) {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -549,7 +549,7 @@ impl SavingsGoalTrackingImpl {
 
     /// Resume a paused goal
     pub fn resume_goal(env: &Env, goal_id: u32) {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -568,7 +568,7 @@ impl SavingsGoalTrackingImpl {
 
     /// Abandon a goal
     pub fn abandon_goal(env: &Env, goal_id: u32) {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -584,11 +584,11 @@ impl SavingsGoalTrackingImpl {
     /// Get member's goals
     pub fn get_member_goals(env: &Env, member: Address) -> Vec<SavingsGoal> {
         let mut goals = Vec::new(env);
-        let member_key = GoalStorageKey::MemberGoals(member.clone());
+        let member_key = (Symbol::new(env, MEMBER_GOALS_KEY_PREFIX), member.clone());
 
         if let Some(goal_ids) = env.storage().persistent().get::<_, Vec<u32>>(&member_key) {
             for id in goal_ids.iter() {
-                let key = GoalStorageKey::Goal(id);
+                let key = (Symbol::new(env, GOAL_KEY_PREFIX), id);
                 if let Some(goal) = env.storage().persistent().get::<_, SavingsGoal>(&key) {
                     goals.push_back(goal);
                 }
@@ -607,11 +607,11 @@ impl SavingsGoalTrackingImpl {
         let mut total_target: i128 = 0;
         let mut total_percentage: u32 = 0;
 
-        let group_key = GoalStorageKey::GroupGoals(group_id);
+        let group_key = (Symbol::new(env, GROUP_GOALS_KEY_PREFIX), group_id);
 
         if let Some(goal_ids) = env.storage().persistent().get::<_, Vec<u32>>(&group_key) {
             for id in goal_ids.iter() {
-                let key = GoalStorageKey::Goal(id);
+                let key = (Symbol::new(env, GOAL_KEY_PREFIX), id);
                 if let Some(goal) = env.storage().persistent().get::<_, SavingsGoal>(&key) {
                     total_goals = total_goals.saturating_add(1);
                     total_saved = total_saved.saturating_add(goal.current_amount);
@@ -687,7 +687,7 @@ impl SavingsGoalTrackingImpl {
         };
 
         // Store badge
-        let key = GoalStorageKey::Badge(badge_id);
+        let key = (Symbol::new(env, BADGE_KEY_PREFIX), badge_id);
         env.storage().persistent().set(&key, &badge);
 
         badge
@@ -713,7 +713,7 @@ impl SavingsGoalTrackingImpl {
         goal_id: u32,
         metadata: Map<String, String>,
     ) {
-        let key = GoalStorageKey::Goal(goal_id);
+        let key = (Symbol::new(env, GOAL_KEY_PREFIX), goal_id);
         let mut goal: SavingsGoal = env
             .storage()
             .persistent()
@@ -733,11 +733,11 @@ impl SavingsGoalTrackingImpl {
         category: String,
     ) -> Vec<SavingsGoal> {
         let mut goals = Vec::new(env);
-        let group_key = GoalStorageKey::GroupGoals(group_id);
+        let group_key = (Symbol::new(env, GROUP_GOALS_KEY_PREFIX), group_id);
 
         if let Some(goal_ids) = env.storage().persistent().get::<_, Vec<u32>>(&group_key) {
             for id in goal_ids.iter() {
-                let key = GoalStorageKey::Goal(id);
+                let key = (Symbol::new(env, GOAL_KEY_PREFIX), id);
                 if let Some(goal) = env.storage().persistent().get::<_, SavingsGoal>(&key) {
                     if goal.category == category {
                         goals.push_back(goal);

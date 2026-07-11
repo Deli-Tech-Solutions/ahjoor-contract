@@ -1,20 +1,21 @@
 #![cfg(test)]
-
-use crate::{AhjoorContract, AhjoorContractClient};
-use soroban_sdk::token::Client as TokenClient;
-use soroban_sdk::token::StellarAssetClient as TokenAdminClient;
+use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    vec, Address, Env,
+    token::{Client as TokenClient, StellarAssetClient as TokenAdminClient},
+    Address, Env,
 };
 
-fn setup_with_members<'a>(n: usize, mint_amount: i128) -> (
+fn setup_insurance<'a>(
+    pool_amount: i128,
+) -> (
     Env,
     AhjoorContractClient<'a>,
     Address,
     Address,
-    soroban_sdk::Vec<Address>,
     TokenClient<'a>,
+    TokenAdminClient<'a>,
+    soroban_sdk::Vec<Address>,
 ) {
     let env = Env::default();
     env.mock_all_auths();
@@ -23,158 +24,122 @@ fn setup_with_members<'a>(n: usize, mint_amount: i128) -> (
     let client = AhjoorContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
-    let token_admin = env
+    let token_addr = env
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    let token_client = TokenClient::new(&env, &token_admin);
-    let token_admin_client = TokenAdminClient::new(&env, &token_admin);
+    let token_client = TokenClient::new(&env, &token_addr);
+    let token_admin_client = TokenAdminClient::new(&env, &token_addr);
 
     let mut members = soroban_sdk::Vec::new(&env);
-    for _ in 0..n {
-        let addr = Address::generate(&env);
-        if mint_amount > 0 {
-            token_admin_client.mint(&addr, &mint_amount);
-        }
-        members.push_back(addr);
+    for _ in 0..3 {
+        let m = Address::generate(&env);
+        token_admin_client.mint(&m, &5000);
+        members.push_back(m);
     }
 
-    (env, client, admin, token_admin, members, token_client)
+    // Mint to admin for insurance pool funding
+    token_admin_client.mint(&admin, &10_000);
+
+    client.init(
+        &admin,
+        &members,
+        &100,
+        &token_addr,
+        &3600,
+        &RoscaConfig {
+            strategy: PayoutStrategy::RoundRobin,
+            custom_order: None,
+            penalty_amount: 0,
+            exit_penalty_bps: 0,
+            collective_goal: None,
+            member_goals: None,
+            fee_bps: 0,
+            fee_recipient: None,
+            max_defaults: 3,
+            grace_period_ledgers: 0,
+            grace_period_seconds: 0,
+            use_timestamp_schedule: false,
+            round_duration_seconds: 0,
+            max_members: None,
+            skip_fee: 0,
+            max_skips_per_cycle: 0,
+            voting_mode: VotingMode::Equal,
+            late_fee_bps: 0,
+            auction_enabled: false,
+            auction_window_ledgers: 0,
+            randomize_payout_order: false,
+            reserve_enabled: false,
+            reserve_contribution_bps: 0,
+        },
+        &None,
+    );
+
+    // Set coverage mode to Full
+    client.set_insurance_coverage_mode(&admin, &InsuranceCoverageMode::Full);
+
+    // Fund the insurance pool using a group member (admin is not a member)
+    if pool_amount > 0 {
+        let funder = members.get(0).unwrap();
+        token_admin_client.mint(&funder, &pool_amount);
+        client.contribute_to_insurance(&funder, &token_addr, &pool_amount);
+    }
+
+    (env, client, admin, token_addr, token_client, token_admin_client, members)
 }
 
+/// #395: Drawing from an underfunded Full-mode insurance pool must transfer
+/// exactly pool_balance (not the full shortfall), leave the pool at 0, and
+/// never allow the stored pool balance to go negative.
 #[test]
-fn test_emergency_loan_grant() {
-    let (env, client, admin, token, members, _token_client) = setup_with_members(3, 1000);
+fn test_insurance_pool_cannot_go_negative() {
+    // Pool has 500 tokens; shortfall will be 700 (one member doesn't contribute,
+    // contributing 200 instead of 300 total — we use 2 paying members out of 3).
+    let pool_seed = 500i128;
+    let (env, client, admin, token_addr, token_client, token_admin_client, members) =
+        setup_insurance(pool_seed);
 
-    // Initialize with emergency reserve enabled
-    let config = crate::RoscaConfig {
-        strategy: crate::PayoutStrategy::RoundRobin,
-        custom_order: None,
-        penalty_amount: 0,
-        exit_penalty_bps: 0,
-        collective_goal: None,
-        member_goals: None,
-        fee_bps: 0,
-        fee_recipient: None,
-        max_defaults: 3,
-        grace_period_ledgers: 0,
-        use_timestamp_schedule: false,
-        round_duration_seconds: 0,
-        max_members: None,
-        skip_fee: 0,
-        max_skips_per_cycle: 0,
-        voting_mode: crate::VotingMode::Equal,
-        late_fee_bps: 0,
-        grace_period_seconds: 0,
-        auction_enabled: false,
-        auction_window_ledgers: 0,
-        reserve_enabled: true,
-        reserve_contribution_bps: 200, // 2% surcharge
-    };
+    let member0 = members.get(0).unwrap();
+    let member1 = members.get(1).unwrap();
+    // member2 will be the defaulter
 
-    client.init(&admin, &members, &100, &token, &3600, &config, &None);
+    // Advance time past start
+    env.ledger().with_mut(|l| l.timestamp = 100);
 
-    // Contribute to build reserve
-    for member in members.iter() {
-        client.contribute(&member, &100);
-    }
+    // Only 2 of 3 members contribute (shortfall = 100 tokens)
+    client.contribute(&member0, &token_addr, &100);
+    client.contribute(&member1, &token_addr, &100);
 
-    // Request emergency loan
-    let loan_id = client.request_emergency_loan(&members.get(0).unwrap(), &50, &500);
+    // Advance past round deadline and finalize
+    env.ledger().with_mut(|l| l.timestamp = 3800);
+    client.finalize_round();
 
-    // Verify loan was created
-    let loan = client.get_emergency_loan(&loan_id);
-    assert_eq!(loan.loan_id, loan_id);
-    assert_eq!(loan.amount, 50);
-    assert_eq!(loan.repaid_amount, 0);
+    // Pool was 500; shortfall was 100 (one member defaulted out of 100 per member).
+    // After draw: pool should be 400 (500 - 100), not negative.
+    let pool_after = client.get_insurance_pool();
+    assert!(pool_after >= 0, "InsurancePool must never go negative, got {}", pool_after);
+    assert_eq!(pool_after, 400, "Pool should be 500 - 100 = 400 after covering shortfall");
 }
 
+/// #395: When the pool is smaller than the shortfall in Full mode, the contract
+/// draws exactly pool_balance and leaves it at 0 (no negative storage value).
 #[test]
-fn test_emergency_loan_repayment() {
-    let (env, client, admin, token, members, _token_client) = setup_with_members(3, 1000);
+fn test_insurance_pool_partial_cover_when_underfunded() {
+    // Fund pool with only 50; shortfall will be 100 (one defaulter)
+    let (env, client, admin, token_addr, _token_client, _token_admin_client, members) =
+        setup_insurance(50);
 
-    let config = crate::RoscaConfig {
-        strategy: crate::PayoutStrategy::RoundRobin,
-        custom_order: None,
-        penalty_amount: 0,
-        exit_penalty_bps: 0,
-        collective_goal: None,
-        member_goals: None,
-        fee_bps: 0,
-        fee_recipient: None,
-        max_defaults: 3,
-        grace_period_ledgers: 0,
-        use_timestamp_schedule: false,
-        round_duration_seconds: 0,
-        max_members: None,
-        skip_fee: 0,
-        max_skips_per_cycle: 0,
-        voting_mode: crate::VotingMode::Equal,
-        late_fee_bps: 0,
-        grace_period_seconds: 0,
-        auction_enabled: false,
-        auction_window_ledgers: 0,
-        reserve_enabled: true,
-        reserve_contribution_bps: 200,
-    };
+    let member0 = members.get(0).unwrap();
+    let member1 = members.get(1).unwrap();
 
-    client.init(&admin, &members, &100, &token, &3600, &config, &None);
+    env.ledger().with_mut(|l| l.timestamp = 100);
+    client.contribute(&member0, &token_addr, &100);
+    client.contribute(&member1, &token_addr, &100);
 
-    for member in members.iter() {
-        client.contribute(&member, &100);
-    }
+    env.ledger().with_mut(|l| l.timestamp = 3800);
+    client.finalize_round();
 
-    let borrower = members.get(0).unwrap();
-    let loan_id = client.request_emergency_loan(&borrower, &50, &500);
-
-    // Repay loan
-    client.repay_emergency_loan(&borrower, &loan_id, &50);
-
-    // Verify loan is fully repaid
-    let loan = client.get_emergency_loan(&loan_id);
-    assert_eq!(loan.repaid_amount, 50);
-}
-
-#[test]
-fn test_duplicate_loan_rejected() {
-    let (env, client, admin, token, members, _token_client) = setup_with_members(3, 1000);
-
-    let config = crate::RoscaConfig {
-        strategy: crate::PayoutStrategy::RoundRobin,
-        custom_order: None,
-        penalty_amount: 0,
-        exit_penalty_bps: 0,
-        collective_goal: None,
-        member_goals: None,
-        fee_bps: 0,
-        fee_recipient: None,
-        max_defaults: 3,
-        grace_period_ledgers: 0,
-        use_timestamp_schedule: false,
-        round_duration_seconds: 0,
-        max_members: None,
-        skip_fee: 0,
-        max_skips_per_cycle: 0,
-        voting_mode: crate::VotingMode::Equal,
-        late_fee_bps: 0,
-        grace_period_seconds: 0,
-        auction_enabled: false,
-        auction_window_ledgers: 0,
-        reserve_enabled: true,
-        reserve_contribution_bps: 200,
-    };
-
-    client.init(&admin, &members, &100, &token, &3600, &config, &None);
-
-    for member in members.iter() {
-        client.contribute(&member, &100);
-    }
-
-    let borrower = members.get(0).unwrap();
-    client.request_emergency_loan(&borrower, &50, &500);
-
-    // Try to request another loan (should fail)
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.request_emergency_loan(&borrower, &30, &500);
-    }));
-    assert!(result.is_err());
+    let pool_after = client.get_insurance_pool();
+    // Pool had 50 < shortfall of 100; all 50 should be drawn, leaving 0.
+    assert!(pool_after >= 0, "InsurancePool must never go negative, got {}", pool_after);
+    assert_eq!(pool_after, 0, "Pool should be 0 after exhausting 50 towards 100 shortfall");
 }

@@ -59,6 +59,13 @@ fn setup_with_members<'a>(
             skip_fee: 0,
             max_skips_per_cycle: 0,
             voting_mode,
+            late_fee_bps: 0,
+            grace_period_seconds: 0,
+            auction_enabled: false,
+            auction_window_ledgers: 0,
+            randomize_payout_order: false,
+            reserve_enabled: false,
+            reserve_contribution_bps: 0,
         },
         &None,
     );
@@ -176,6 +183,66 @@ fn test_equal_voting_mode_preserves_behavior() {
     client.vote_on_proposal(&member2, &0, &true);
     let prop = client.get_proposal(&0).unwrap();
     assert_eq!(prop.votes_for, 1);
+}
+
+/// #398: A member with an active contribution-weight delegation must not be
+/// able to cast a direct vote — the contract should return
+/// CannotVoteWithActiveDelegation.
+#[test]
+fn test_delegated_member_cannot_double_vote() {
+    use soroban_sdk::testutils::Ledger;
+
+    let (env, client, _admin, token_addr, _token_client, token_admin_client, members) =
+        setup_with_members(3, VotingMode::WeightedByContributions);
+
+    let delegator = members.get(0).unwrap();
+    let delegate  = members.get(1).unwrap();
+    let proposer  = members.get(2).unwrap();
+
+    token_admin_client.mint(&delegator, &2000);
+    token_admin_client.mint(&delegate,  &2000);
+    token_admin_client.mint(&proposer,  &2000);
+
+    // Build up contribution weight
+    client.contribute(&delegator, &token_addr, &1000);
+    client.contribute(&delegate,  &token_addr, &1000);
+
+    // Advance ledger; delegate vote expires at sequence 1_000_000
+    env.ledger().with_mut(|l| {
+        l.sequence_number = 100;
+        l.timestamp       = 200;
+    });
+
+    // Delegator sets up a contribution delegation to delegate
+    client.delegate_contribution_vote(&delegator, &delegate, &1_000_000u64);
+
+    // Create a proposal
+    client.create_proposal(
+        &proposer,
+        &ProposalType::RuleChange,
+        &soroban_sdk::String::from_str(&env, "test delegation"),
+        &proposer,
+        &86400,
+        &None,
+    );
+
+    // Delegator tries to vote directly — must be rejected
+    let result = client.try_vote_on_proposal(&delegator, &0, &true);
+    assert!(
+        result.is_err(),
+        "delegator with active contrib delegation should not be able to vote directly"
+    );
+
+    // Delegate can vote; delegator's weight is automatically included
+    client.vote_on_proposal(&delegate, &0, &true);
+
+    let prop = client.get_proposal(&0).unwrap();
+    // Both weights (1000 each) should be counted
+    assert_eq!(prop.votes_for, 2000, "delegate vote should carry delegator weight too");
+
+    // Delegator can no longer vote (already marked as voted via delegation)
+    let result2 = client.try_vote_on_proposal(&delegator, &0, &true);
+    assert!(result2.is_err(), "delegator should not be able to vote after delegate already voted");
 }
 
 

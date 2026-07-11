@@ -320,7 +320,32 @@ fn test_voucher_exhausted_after_max_uses() {
 
     let voucher = s.client.get_voucher(&s.merchant, &code_hash);
     assert_eq!(voucher.uses_remaining, 0);
-    assert!(voucher.revoked); // marked exhausted
+    assert!(!voucher.revoked);
+}
+
+#[test]
+fn test_voucher_max_uses_enforced() {
+    let s = setup();
+    let customer = Address::generate(&s.env);
+    s.token_admin_client.mint(&customer, &5_000);
+
+    let code_hash = make_external_id(&s.env, 42);
+    s.client.issue_voucher(&s.merchant, &code_hash, &DiscountType::Fixed, &50, &1, &0);
+
+    s.client.create_payment_with_voucher(
+        &customer, &s.merchant, &500, &s.token_addr,
+        &None, &None, &None, &Some(code_hash.clone()), &None,
+    );
+
+    let voucher = s.client.get_voucher(&s.merchant, &code_hash);
+    assert_eq!(voucher.uses_remaining, 0);
+    assert!(!voucher.revoked);
+
+    let second_attempt = s.client.try_create_payment_with_voucher(
+        &customer, &s.merchant, &500, &s.token_addr,
+        &None, &None, &None, &Some(code_hash), &None,
+    );
+    assert_eq!(second_attempt.unwrap_err().unwrap(), Error::VoucherExhausted.into());
 }
 
 #[test]

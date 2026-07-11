@@ -162,21 +162,46 @@ pub enum ExtError {
     SplitAlreadyConfirmed = 91,
     /// Not all members have confirmed; cannot execute split yet (#331).
     SplitNotFullyConfirmed = 92,
-    AuctionNotEnabled = 93,
-    AuctionNotOpen = 94,
-    AuctionWindowClosed = 95,
-    MigrationAlreadyPending = 96,
-    MigrationNotFound = 97,
-    MigrationAlreadyExecuted = 98,
-    MigrationNotApproved = 99,
-    InvalidSlotIndex = 100,
+    /// Proxy has consumed all authorized rounds (#403).
+    ProxyRoundsExhausted = 118,
 }
 
+/// Extension error codes 101+ — overflow from ExtError (50-variant limit).
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtError2 {
-    NoBidFound = 101,
-    TokenMismatch = 102,
-    SlotOccupied = 103,
+    /// Slot auction feature is not enabled.
+    AuctionNotEnabled = 101,
+    /// No auction is currently open.
+    AuctionNotOpen = 102,
+    /// Auction bidding window has closed.
+    AuctionWindowClosed = 103,
+    /// Contribution amount does not match the required amount.
     IncorrectContributionAmount = 104,
+    /// Slot index is out of range.
+    InvalidSlotIndex = 105,
+    /// Migration has already been executed.
+    MigrationAlreadyExecuted = 106,
+    /// A migration request is already pending for this member.
+    MigrationAlreadyPending = 107,
+    /// Migration has not been approved by the target group.
+    MigrationNotApproved = 108,
+    /// No migration request found for this member.
+    MigrationNotFound = 109,
+    /// No bid found for the given criteria.
+    NoBidFound = 110,
+    /// Target slot is already occupied by another member.
+    SlotOccupied = 111,
+    /// Token mismatch between source and target groups.
+    TokenMismatch = 112,
+    /// Member already has an outstanding emergency loan.
+    OutstandingLoanExists = 113,
+    /// No co-payer splits registered for this member.
+    NoCopayersRegistered = 114,
+    /// Co-payer split amounts do not sum to the required contribution amount.
+    CopayerAmountsMismatch = 115,
+    /// Contribution receipt not found for the given ID.
+    ReceiptNotFound = 116,
+    /// Member has already registered co-payer splits; revoke first.
+    CopayerSplitsAlreadySet = 117,
 }

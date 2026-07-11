@@ -73,7 +73,7 @@ fn test_create_consent_record() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 1);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -105,7 +105,7 @@ fn test_sign_consent() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 2);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -114,6 +114,9 @@ fn test_sign_consent() {
         &terms_version,
         &expiry_ledger,
     );
+
+    // Advance timestamp so signed_at is non-zero
+    s.env.ledger().with_mut(|l| l.timestamp = 1000);
 
     // Customer signs consent
     s.client.sign_consent(&customer, &consent_id);
@@ -133,7 +136,7 @@ fn test_is_consent_valid() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 3);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -166,7 +169,7 @@ fn test_consent_expiry() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 4);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 100;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 100;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -185,7 +188,7 @@ fn test_consent_expiry() {
 
     // Advance ledger past expiry
     s.env.ledger().with_mut(|l| {
-        l.sequence_number = expiry_ledger + 1;
+        l.sequence_number = (expiry_ledger + 1) as u32;
     });
 
     // Consent should now be invalid
@@ -204,7 +207,7 @@ fn test_revoke_consent() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 5);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -245,7 +248,7 @@ fn test_duplicate_sign_consent_panics() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 6);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -270,7 +273,7 @@ fn test_sign_revoked_consent_panics() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 7);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -296,7 +299,7 @@ fn test_get_consent_id_by_triple() {
     let customer = Address::generate(&s.env);
     let terms_hash = make_bytes32(&s.env, 8);
     let terms_version = make_string(&s.env, "v1.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     let consent_id = s.client.create_consent_record(
         &merchant,
@@ -324,7 +327,7 @@ fn test_multiple_consent_records() {
     let terms_hash_v2 = make_bytes32(&s.env, 10);
     let terms_version_v1 = make_string(&s.env, "v1.0");
     let terms_version_v2 = make_string(&s.env, "v2.0");
-    let expiry_ledger = s.env.ledger().sequence() + 1000;
+    let expiry_ledger: u64 = u64::from(s.env.ledger().sequence()) + 1000;
 
     // Create two consent records for different versions
     let consent_id_v1 = s.client.create_consent_record(

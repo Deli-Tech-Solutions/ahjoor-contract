@@ -302,3 +302,31 @@ fn test_key_removal_affects_subsequent_events() {
 
     // Just verify both payments were created successfully
 }
+
+// --- Issue #455: test_notification_key_lifecycle ---
+
+#[test]
+fn test_notification_key_lifecycle() {
+    let (env, _admin, _customer, merchant, _token, client) = setup_test_env();
+
+    // 1. No key registered initially
+    assert_eq!(client.get_notification_key(&merchant), None);
+
+    // 2. Register notification key
+    let key1 = Bytes::from_array(&env, &[0xAA, 0xBB, 0xCC]);
+    client.register_notification_key(&merchant, &key1);
+
+    // Key is queryable via get_notification_key
+    assert_eq!(client.get_notification_key(&merchant), Some(key1.clone()));
+
+    // 3. Rotate to a new key
+    let key2 = Bytes::from_array(&env, &[0x11, 0x22, 0x33, 0x44]);
+    client.rotate_notification_key(&merchant, &key2);
+
+    // After rotation, active key is the new key
+    assert_eq!(client.get_notification_key(&merchant), Some(key2.clone()));
+
+    // 4. Remove notification key
+    client.remove_notification_key(&merchant);
+    assert_eq!(client.get_notification_key(&merchant), None);
+}

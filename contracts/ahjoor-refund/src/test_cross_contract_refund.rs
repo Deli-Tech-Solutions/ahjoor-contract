@@ -114,7 +114,7 @@ fn test_cross_contract_refund_counted_in_merchant_metrics() {
         &origin, &5u32, &customer, &merchant, &token_addr, &300i128, &0u32,
     );
 
-    let stats = AhjoorRefundContract::get_merchant_refund_stats(&env, merchant);
+    let stats = refund_client.get_merchant_refund_stats(&merchant);
     assert_eq!(stats.total_requested, 1);
     assert_eq!(stats.total_processed, 1);
     assert_eq!(stats.total_amount_refunded, 300);

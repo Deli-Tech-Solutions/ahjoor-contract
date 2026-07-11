@@ -125,11 +125,12 @@ pub struct RefundCounterRejected {
     pub customer: Address,
 }
 
-/// Event: Counter-offer expired and auto-settled (#360)
+/// Event: Counter-offer expired and auto-settled
 #[contractevent]
 #[derive(Clone, Debug)]
 pub struct CounterOfferExpired {
     pub refund_id: u32,
+    /// true = original refund accepted, false = rejected
     pub resolution: bool,
     pub original_amount: i128,
 }
@@ -520,6 +521,14 @@ pub struct FraudScoreDecayApplied {
     pub new_score: u32,
 }
 
+/// Event: Fraud score block threshold updated
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct FraudBlockThresholdUpdated {
+    pub old_threshold: u32,
+    pub new_threshold: u32,
+}
+
 // --- Helper Emission Functions ---
 
 pub fn emit_fraud_score_updated(e: &Env, buyer: Address, new_score: u32, reason: Symbol) {
@@ -554,10 +563,11 @@ pub fn emit_fraud_score_decay_applied(e: &Env, buyer: Address, old_score: u32, n
 }
 
 pub fn emit_fraud_score_block_threshold_updated(e: &Env, old_threshold: u32, new_threshold: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "FraudScoreBlockThreshUpdated"),),
-        (old_threshold, new_threshold),
-    );
+    FraudBlockThresholdUpdated {
+        old_threshold,
+        new_threshold,
+    }
+    .publish(e);
 }
 
 pub fn emit_refund_counter_offered(
@@ -612,15 +622,20 @@ pub struct AutoApproveThresholdSet {
     pub amount: i128,
 }
 
+/// Event: Refund auto-approved because amount <= merchant threshold
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct RefundApprovedByLimit {
+    pub refund_id: u32,
+    pub amount: i128,
+}
+
 pub fn emit_auto_approve_threshold_set(e: &Env, merchant: Address, amount: i128) {
     AutoApproveThresholdSet { merchant, amount }.publish(e);
 }
 
 pub fn emit_refund_auto_approved_by_threshold(e: &Env, refund_id: u32, amount: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "RefundAutoApprovedByThresh"),),
-        (refund_id, amount),
-    );
+    RefundApprovedByLimit { refund_id, amount }.publish(e);
 }
 
 // --- Issue #245: Partial Refund Approval ---

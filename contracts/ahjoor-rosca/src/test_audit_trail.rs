@@ -34,6 +34,7 @@ fn create_test_contract(env: &Env) -> (AhjoorContractClient, Address, Vec<Addres
         fee_recipient: Some(admin.clone()),
         max_defaults: 3u32,
             grace_period_ledgers: 0,
+            grace_period_seconds: 0,
             use_timestamp_schedule: false,
         round_duration_seconds: 0u64,
         max_members: Some(10u32),
@@ -44,6 +45,9 @@ fn create_test_contract(env: &Env) -> (AhjoorContractClient, Address, Vec<Addres
     grace_period_seconds: 0,
     auction_enabled: false,
     auction_window_ledgers: 0,
+    randomize_payout_order: false,
+    reserve_enabled: false,
+    reserve_contribution_bps: 0,
     };
 
     client.init(
@@ -424,3 +428,48 @@ fn test_cycle_record_total_pool_amount() {
 }
 
 
+
+
+#[test]
+fn test_cycle_record_timestamp_nonzero_ledger_mode() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, members) = create_test_contract(&env);
+    let token = client.get_state().4;
+
+    // Ensure we're in ledger-mode (use_timestamp_schedule = false)
+    // The test contract is created with use_timestamp_schedule = false
+
+    // Advance the ledger sequence before the first round starts
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+    });
+
+    // Mint tokens for members
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    for member in members.iter() {
+        token_admin_client.mint(&member, &10000i128);
+    }
+
+    // All members contribute (this completes round 0 and should trigger cycle end recording)
+    for member in members.iter() {
+        client.contribute(&member, &token, &1000i128);
+    }
+
+    // Get cycle record for cycle 0
+    let cycle_record = client.get_cycle_record(&0u32).unwrap();
+
+    // Verify cycle_end_timestamp is non-zero in ledger-mode
+    // It should be the sequence number (10) cast as u64
+    assert!(cycle_record.cycle_end_timestamp > 0, "cycle_end_timestamp should be non-zero in ledger-mode");
+    assert_eq!(cycle_record.cycle_end_timestamp, 10u64, "cycle_end_timestamp should equal ledger sequence");
+
+    // Verify cycle_start_timestamp is also non-zero
+    assert!(cycle_record.cycle_start_timestamp > 0, "cycle_start_timestamp should be non-zero in ledger-mode");
+    
+    // Verify other cycle record fields are populated
+    assert_eq!(cycle_record.cycle_number, 0);
+    assert_eq!(cycle_record.contributions.len(), 3);
+    assert_eq!(cycle_record.defaulters.len(), 0);
+}

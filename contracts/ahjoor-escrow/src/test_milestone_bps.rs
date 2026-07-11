@@ -8,22 +8,21 @@ use crate::{
     MilestoneInput, MilestoneStateStatus, EscrowStatus,
 };
 
-fn setup_env() -> (Env, AhjoorEscrowContractClient<'static>) {
+fn setup_env() -> (Env, AhjoorEscrowContractClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.initialize(&admin);
-    (env, client)
+    (env, client, admin)
 }
 
-fn dummy_token(env: &Env, client: &AhjoorEscrowContractClient) -> (Address, TokenAdminClient, Address) {
-    let admin = Address::generate(env);
+fn dummy_token<'a>(env: &'a Env, client: &AhjoorEscrowContractClient<'a>, admin: &Address) -> (Address, TokenAdminClient<'a>, Address) {
     let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let token_admin = TokenAdminClient::new(env, &token_id);
-    client.add_allowed_token(&admin, &token_id);
-    (token_id, token_admin, admin)
+    client.add_allowed_token(admin, &token_id);
+    (token_id, token_admin, admin.clone())
 }
 
 fn hash(env: &Env, byte: u8) -> BytesN<32> {
@@ -56,8 +55,8 @@ fn three_milestones(env: &Env) -> Vec<MilestoneInput> {
 
 #[test]
 fn test_create_escrow_validates_bps_sum() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -87,8 +86,8 @@ fn test_create_escrow_validates_bps_sum() {
 #[test]
 #[should_panic]
 fn test_bps_sum_mismatch_panics() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -116,8 +115,8 @@ fn test_bps_sum_mismatch_panics() {
 
 #[test]
 fn test_submit_milestone_stores_delivery_hash() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -147,8 +146,8 @@ fn test_submit_milestone_stores_delivery_hash() {
 
 #[test]
 fn test_approve_milestone_releases_proportional_amount() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -177,8 +176,8 @@ fn test_approve_milestone_releases_proportional_amount() {
 
 #[test]
 fn test_reject_milestone_returns_to_pending() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -207,8 +206,8 @@ fn test_reject_milestone_returns_to_pending() {
 
 #[test]
 fn test_resubmission_after_rejection() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -238,8 +237,8 @@ fn test_resubmission_after_rejection() {
 
 #[test]
 fn test_final_milestone_releases_rounding_remainder() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);
@@ -280,8 +279,8 @@ fn test_final_milestone_releases_rounding_remainder() {
 
 #[test]
 fn test_rejected_milestone_does_not_block_other_milestones() {
-    let (env, client) = setup_env();
-    let (token, ta, _) = dummy_token(&env, &client);
+    let (env, client, admin) = setup_env();
+    let (token, ta, _) = dummy_token(&env, &client, &admin);
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let arbiter = Address::generate(&env);

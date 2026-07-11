@@ -183,7 +183,7 @@ fn test_replace_verifier_before_submission_then_flow_works() {
 
     let new_verifier = Address::generate(&hx.env);
     hx.client
-        .replace_bounty_milestone_verifier(&hx.buyer, &id, &0, &new_verifier);
+        .replace_bounty_verifier(&hx.buyer, &id, &0, &new_verifier);
 
     // The stored verifier for milestone 0 is updated.
     assert_eq!(
@@ -213,5 +213,148 @@ fn test_replace_verifier_after_submission_is_rejected() {
     let new_verifier = Address::generate(&hx.env);
     // Too late — milestone 0 is already Submitted.
     hx.client
-        .replace_bounty_milestone_verifier(&hx.buyer, &id, &0, &new_verifier);
+        .replace_bounty_verifier(&hx.buyer, &id, &0, &new_verifier);
+}
+
+#[test]
+#[should_panic(expected = "Only the bounty creator can replace a verifier")]
+fn test_non_buyer_cannot_replace_verifier() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+
+    let new_verifier = Address::generate(&hx.env);
+    let unauthorized = Address::generate(&hx.env);
+    
+    // Unauthorized address tries to replace verifier
+    hx.client
+        .replace_bounty_verifier(&unauthorized, &id, &0, &new_verifier);
+}
+
+#[test]
+#[should_panic(expected = "Only the solver can submit milestones")]
+fn test_non_solver_cannot_submit_milestone() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+    hx.client.claim_bounty(&hx.solver, &id);
+
+    let unauthorized = Address::generate(&hx.env);
+    
+    // Unauthorized address tries to submit milestone
+    hx.client.submit_bounty_milestone(&unauthorized, &id, &0, &h(&hx.env, 11));
+}
+
+#[test]
+#[should_panic(expected = "Bounty must be claimed before submitting milestones")]
+fn test_submit_milestone_before_claim_is_rejected() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+
+    // Try to submit milestone without claiming the bounty first
+    hx.client.submit_bounty_milestone(&hx.solver, &id, &0, &h(&hx.env, 11));
+}
+
+#[test]
+fn test_multiple_verifier_replacements_before_submission() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+
+    // Replace verifier multiple times before submission
+    let verifier_v2 = Address::generate(&hx.env);
+    let verifier_v3 = Address::generate(&hx.env);
+    let verifier_v4 = Address::generate(&hx.env);
+
+    hx.client
+        .replace_bounty_verifier(&hx.buyer, &id, &0, &verifier_v2);
+    assert_eq!(
+        hx.client.get_bounty_milestones(&id).get(0).unwrap().verifier,
+        verifier_v2
+    );
+
+    hx.client
+        .replace_bounty_verifier(&hx.buyer, &id, &0, &verifier_v3);
+    assert_eq!(
+        hx.client.get_bounty_milestones(&id).get(0).unwrap().verifier,
+        verifier_v3
+    );
+
+    hx.client
+        .replace_bounty_verifier(&hx.buyer, &id, &0, &verifier_v4);
+    assert_eq!(
+        hx.client.get_bounty_milestones(&id).get(0).unwrap().verifier,
+        verifier_v4
+    );
+
+    // Verify the final verifier is used for verification
+    hx.client.claim_bounty(&hx.solver, &id);
+    hx.client.submit_bounty_milestone(&hx.solver, &id, &0, &h(&hx.env, 11));
+    hx.client.verify_bounty_milestone(&id, &0);
+    
+    assert_eq!(hx.token.balance(&hx.solver), 300);
+    assert_eq!(
+        hx.client.get_bounty_milestones(&id).get(0).unwrap().status,
+        BountyMilestoneStatus::Paid
+    );
+}
+
+#[test]
+fn test_all_milestones_can_be_verified_independently_by_different_verifiers() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+
+    hx.client.claim_bounty(&hx.solver, &id);
+
+    // Submit and verify milestone 0 (verifier0)
+    hx.client.submit_bounty_milestone(&hx.solver, &id, &0, &h(&hx.env, 11));
+    hx.client.verify_bounty_milestone(&id, &0);
+    
+    let milestones_after_first = hx.client.get_bounty_milestones(&id);
+    assert_eq!(
+        milestones_after_first.get(0).unwrap().status,
+        BountyMilestoneStatus::Paid
+    );
+    assert_eq!(
+        milestones_after_first.get(0).unwrap().verifier,
+        hx.verifier0
+    );
+
+    // Submit and verify milestone 1 (verifier1)
+    hx.client.submit_bounty_milestone(&hx.solver, &id, &1, &h(&hx.env, 12));
+    hx.client.verify_bounty_milestone(&id, &1);
+    
+    let milestones_after_second = hx.client.get_bounty_milestones(&id);
+    assert_eq!(
+        milestones_after_second.get(1).unwrap().status,
+        BountyMilestoneStatus::Paid
+    );
+    assert_eq!(
+        milestones_after_second.get(1).unwrap().verifier,
+        hx.verifier1
+    );
+
+    // Both milestones paid by different verifiers
+    assert_eq!(hx.token.balance(&hx.solver), 500);
+    assert_eq!(hx.client.get_escrow(&id).status, EscrowStatus::Released);
+}
+
+/// #419: Out-of-order submission must be rejected before any prior milestone is verified.
+#[test]
+#[should_panic(expected = "Previous milestone not yet verified")]
+fn test_out_of_order_submission_rejected() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+    hx.client.claim_bounty(&hx.solver, &id);
+
+    // Milestone 0 is Pending (not yet verified). Submitting milestone 1 must fail.
+    hx.client.submit_bounty_milestone(&hx.solver, &id, &1, &h(&hx.env, 12));
+}
+
+#[test]
+#[should_panic(expected = "Milestone index out of bounds")]
+fn test_submit_invalid_milestone_index() {
+    let hx = setup();
+    let id = create_two_milestone_bounty(&hx);
+    hx.client.claim_bounty(&hx.solver, &id);
+
+    // Try to submit milestone with index 2 (only 0 and 1 exist)
+    hx.client.submit_bounty_milestone(&hx.solver, &id, &2, &h(&hx.env, 13));
 }
