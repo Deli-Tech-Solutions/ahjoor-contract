@@ -5,19 +5,14 @@ use soroban_sdk::{
 };
 use crate::multi_token_invoice::*;
 
-// Counter storage keys (static)
+// Storage keys
 const INVOICE_COUNTER_KEY: &str = "invoice_counter";
+const INVOICE_KEY_PREFIX: &str = "invoice_";
+const INVOICE_PAYMENT_KEY_PREFIX: &str = "invoice_payment_";
+const SETTLEMENT_BATCH_KEY_PREFIX: &str = "settlement_batch_";
 const SETTLEMENT_BATCH_COUNTER_KEY: &str = "settlement_batch_counter";
 const PAYMENT_COUNTER_KEY: &str = "payment_counter";
-
-#[contracttype]
-enum InvoiceStorageKey {
-    Invoice(u32),
-    InvoicePayment(u32),
-    SettlementBatch(u32),
-    MerchantRates(Address),
-    CrossSettlement(u32),
-}
+const MERCHANT_CONVERSION_RATES_KEY_PREFIX: &str = "merchant_rates_";
 
 fn invoice_key(env: &Env, id: u32) -> (Symbol, u32) {
     (Symbol::new(env, "invoice"), id)

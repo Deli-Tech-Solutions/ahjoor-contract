@@ -393,19 +393,33 @@ pub enum DataKey {
 pub enum DataKey2 {
     /// #244: seller transfer proposal per escrow
     SellerTransferProposal(u32),
+    /// #244: admin-configurable veto window in ledgers (default: 100)
     SellerTransferVetoWindow,
+    /// #146: (ratee) → (total_score: u64, count: u32) for reputation
     RatingScore(Address),
+    /// #146: (escrow_id, rater) → bool — prevents double-rating
     RatingSubmitted(u32, Address),
+    /// Cooling-off window seconds after arbiter verdict (0 = disabled)
     ResolutionCoolingOffSeconds,
+    /// Pending arbiter verdict awaiting cooling-off
     PendingVerdict(u32),
+    /// (escrow_id) → (caller, reason_hash) for dispute resolution flag
     ResolutionFlag(u32),
+    /// Amendment proposal for an escrow (escrow_id → AmendmentProposal)
     AmendmentProposal(u32),
+    /// Amendment proposal nonce counter per escrow (escrow_id → u32)
     AmendmentNonce(u32),
+    /// Admin-configurable amendment proposal expiry window in seconds
     AmendmentExpirySeconds,
+    /// #272: Inspector report per escrow
     InspectorReport(u32),
+    /// #272: Pending inspector replacement
     InspectorReplacement(u32),
+    /// Auto-renewal: ordered list of successor escrow IDs for a given original escrow
     RenewalHistory(u32),
+    /// Auto-renewal: number of renewals completed for a given escrow chain (keyed by original ID)
     RenewalsCompleted(u32),
+    /// Auto-renewal: whether the buyer has cancelled future renewals for this escrow
     AutoRenewalCancelled(u32),
     /// #317: seller share delegation per escrow (escrow_id, original_seller) → delegate_address
     SellerShareDelegate(u32, Address),
@@ -1126,7 +1140,7 @@ impl AhjoorEscrowContract {
         env.storage().persistent().extend_ttl(
             &DataKey::Escrow(escrow_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT,
         );
-        env.events().publish((soroban_sdk::Symbol::new(&env, "SellerMarkedComplete"),), (escrow_id, seller));
+        events::emit_seller_marked_complete(&env, escrow_id, seller);
         env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
@@ -1162,7 +1176,7 @@ impl AhjoorEscrowContract {
         env.storage().persistent().extend_ttl(
             &DataKey::Escrow(escrow_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT,
         );
-        events::emit_inspection_result_submitted(&env, escrow_id, inspector, approved, report_hash);
+        events::emit_inspection_report_submitted(&env, escrow_id, inspector, approved, report_hash);
         env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
@@ -4184,50 +4198,7 @@ impl AhjoorEscrowContract {
             .get(&DataKey::Escrow(escrow_id))
             .expect("Escrow not found");
 
-        if buyer != escrow.buyer {
-            panic!("Only buyer can reject partial release");
-        }
-
-        // Get pending request
-        let request: PartialReleaseRequest = env
-            .storage()
-            .persistent()
-            .get(&DataKey::PendingPartialRelease(escrow_id))
-            .expect("No pending partial release request");
-
-        if request.request_id != request_id {
-            panic!("Invalid request ID");
-        }
-
-        // Remove pending request
-        env.storage()
-            .persistent()
-            .remove(&DataKey::PendingPartialRelease(escrow_id));
-
-        // Emit event
-        events::emit_partial_release_rejected(&env, escrow_id, request_id);
-    }
-
-    /// Delegate seller's share to another address before release (#317)
-    pub fn delegate_escrow_share(
-        env: Env,
-        seller: Address,
-        escrow_id: u32,
-        delegate: Address,
-    ) {
-        Self::require_not_paused(&env);
-        seller.require_auth();
-
-        if seller == delegate {
-            panic!("Delegate must be different from seller");
-        }
-
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Escrow(escrow_id))
-            .expect("Escrow not found");
-
+        // Verify seller is part of this escrow
         let mut is_seller = false;
         for (addr, _) in escrow.sellers.iter() {
             if addr == seller {
@@ -4239,6 +4210,7 @@ impl AhjoorEscrowContract {
             panic!("Seller is not part of this escrow");
         }
 
+        // Only allow delegation before release
         if !Self::is_open_escrow_status(escrow.status) {
             panic!("Can only delegate before escrow is released");
         }
@@ -4281,11 +4253,17 @@ impl AhjoorEscrowContract {
             .get(&DataKey::PendingPartialRelease(escrow_id))
             .expect("No pending partial release request");
 
-        events::emit_seller_share_delegated(&env, escrow_id, seller, delegate);
+        if request.request_id != request_id {
+            panic!("Invalid request ID");
+        }
 
+        // Remove pending request
         env.storage()
-            .instance()
-            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+            .persistent()
+            .remove(&DataKey::PendingPartialRelease(escrow_id));
+
+        // Emit event
+        events::emit_partial_release_rejected(&env, escrow_id, request_id);
     }
 
     /// Seller escalates to dispute if buyer doesn't respond within deadline
@@ -6417,6 +6395,8 @@ impl AhjoorEscrowContract {
     // ── #361: Collateral Top-Up Mechanism ────────────────────────────────────
 
     /// Configure collateral health monitoring for an escrow.
+    /// Sets the minimum collateral ratio (bps of escrow amount) and the oracle to use.
+    /// Only the buyer can call this on an active escrow.
     pub fn set_collateral_health_config(
         env: Env,
         buyer: Address,
@@ -6448,16 +6428,10 @@ impl AhjoorEscrowContract {
         env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
-    // ── #350: Multi-Party N-of-M Release Approval ────────────────────────────
-
-    /// Configure N-of-M approval for an existing escrow.
-    pub fn set_multiparty_approval(
-        env: Env,
-        buyer: Address,
-        escrow_id: u32,
-        approvers: Vec<Address>,
-        threshold: u32,
-    ) {
+    /// Check collateral health via oracle. Returns current ratio in bps.
+    /// Flags escrow as UnderCollateralized if ratio drops below threshold.
+    /// Callable by anyone.
+    pub fn check_collateral_health(env: Env, escrow_id: u32) -> u32 {
         Self::require_not_paused(&env);
         let mut escrow: Escrow = env
             .storage()
@@ -6483,11 +6457,13 @@ impl AhjoorEscrowContract {
             .get(&DataKey::SellerCollateral(escrow_id))
             .unwrap_or(0);
 
+        // Query oracle for collateral token price relative to escrow token
         let oracle_client = oracle::OracleClient::new(&env, &oracle_addr);
         let price_data = oracle_client
             .lastprice(&escrow.token, &escrow.token)
             .unwrap_or(PriceData { price: 10_000_000, timestamp: env.ledger().timestamp() });
 
+        // current_ratio_bps = (collateral * price * 10000) / (escrow.amount * 10^7)
         let collateral_value = if price_data.price > 0 {
             (collateral * price_data.price) / 10_000_000
         } else {
@@ -6500,6 +6476,7 @@ impl AhjoorEscrowContract {
         };
 
         if current_ratio_bps < min_ratio_bps {
+            // Flag as under-collateralized if currently active
             if Self::is_open_escrow_status(escrow.status) {
                 escrow.status = EscrowStatus::UnderCollateralized;
                 env.storage().persistent().set(&DataKey::Escrow(escrow_id), &escrow);
@@ -6507,6 +6484,7 @@ impl AhjoorEscrowContract {
             }
             events::emit_collateral_health_alert(&env, escrow_id, current_ratio_bps, min_ratio_bps);
         } else if escrow.status == EscrowStatus::UnderCollateralized {
+            // Restore to Active if health recovered
             escrow.status = EscrowStatus::Active;
             env.storage().persistent().set(&DataKey::Escrow(escrow_id), &escrow);
             env.storage().persistent().extend_ttl(&DataKey::Escrow(escrow_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
@@ -6516,12 +6494,17 @@ impl AhjoorEscrowContract {
         current_ratio_bps
     }
 
-    /// Approver signs off on releasing the escrow funds.
-    pub fn approve_release(env: Env, approver: Address, escrow_id: u32) {
+    /// Collateral provider tops up collateral for an escrow.
+    /// Clears UnderCollateralized flag if ratio is restored above threshold.
+    pub fn top_up_collateral(env: Env, provider: Address, escrow_id: u32, amount: i128) {
         Self::require_not_paused(&env);
-        approver.require_auth();
+        provider.require_auth();
 
-        let escrow: Escrow = env
+        if amount <= 0 {
+            panic!("Top-up amount must be positive");
+        }
+
+        let mut escrow: Escrow = env
             .storage()
             .persistent()
             .get(&DataKey::Escrow(escrow_id))
@@ -8683,7 +8666,7 @@ mod test;
 mod test_dispute_timeout;
 
 #[cfg(test)]
-#[cfg(any())] mod test_token_whitelist;
+mod test_token_whitelist;
 
 #[cfg(test)]
 mod test_cooling_off;

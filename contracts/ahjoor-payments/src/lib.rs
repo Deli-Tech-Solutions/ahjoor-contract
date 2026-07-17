@@ -1,12 +1,6 @@
 #![no_std]
+use ahjoor_token_whitelist::TokenWhitelistClient;
 use soroban_sdk::xdr::ToXdr;
-
-struct TokenWhitelistClient;
-impl TokenWhitelistClient {
-    fn new(_env: &Env, _contract: &Address) -> Self { Self }
-    fn is_token_allowed(&self, _token: &Address) -> bool { true }
-    fn is_token_allowed_for_contract(&self, _contract_id: &Address, _token: &Address) -> bool { true }
-}
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Bytes,
     BytesN, Env, Map, String, Symbol, Vec,
@@ -182,8 +176,6 @@ pub enum Error {
     DebitAlreadyAbandoned = 36,
     /// Debit record already succeeded; no retry needed (#329)
     DebitAlreadySucceeded = 37,
-    /// Customer is blocked by merchant
-    CustomerBlocked = 50,
     /// Payment is not in a pending state and cannot be extended
     InvalidPaymentStatus = 38,
     /// Maximum number of extensions reached for this payment
@@ -1025,7 +1017,9 @@ pub enum DataKey2 {
 pub enum DataKey3 {
     /// #351: counter for recurring payment schedules
     RecurringCounter,
+    /// #351: recurring payment schedule record
     RecurringSchedule(u32),
+    /// #367: 30-day rolling settled volume record per merchant
     MerchantSettlementVolume(Address),
     /// #358: buyer trust tier assigned by merchant (merchant, buyer) → BuyerTrustTierLevel
     BuyerTrustTier(Address, Address),
@@ -10323,7 +10317,7 @@ mod test_tip;
 mod test_consent;
 
 #[cfg(test)]
-#[cfg(any())] mod test_token_whitelist;
+mod test_token_whitelist;
 
 #[cfg(test)]
 mod test_collateral;

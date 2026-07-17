@@ -1673,43 +1673,9 @@ pub fn emit_snapshot_created(e: &Env, group_id: u32, cycle_number: u32, snapshot
     SnapshotCreated { group_id, cycle_number, snapshot_hash }.publish(e);
 }
 
-pub fn emit_slot_bid_placed(e: &Env, group_id: u32, bidder: Address, desired_slot: u32, bid_amount: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SlotBidPlaced"),),
-        (group_id, bidder, desired_slot, bid_amount),
-    );
-}
-
-pub fn emit_slot_auction_resolved(e: &Env, group_id: u32, winner: Address, slot: u32, winning_bid: i128, bonus_per_member: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SlotAuctionResolved"),),
-        (group_id, winner, slot, winning_bid, bonus_per_member),
-    );
-}
-
-pub fn emit_migration_requested(e: &Env, member: Address, src_contract: Address, to_group: Address) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "MigrationRequested"),),
-        (member, src_contract, to_group),
-    );
-}
-
-pub fn emit_migration_executed(e: &Env, member: Address, from_group: Address, dest_contract: Address, target_slot: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "MigrationExecuted"),),
-        (member, from_group, dest_contract, target_slot),
-    );
-}
-
-pub fn emit_proxy_expired(e: &Env, group_id: u32, member: Address, proxy: Address, expiry_ledger: u64) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "ProxyExpired"),),
-        (group_id, member, proxy, expiry_ledger),
-    );
-}
-
 // ── #359: Savings Goal Milestone Rewards ─────────────────────────────────────
 
+/// Event: Member reached a savings goal milestone and received a reward (#359)
 #[contractevent]
 #[derive(Clone, Debug)]
 pub struct MilestoneReached {
@@ -1719,12 +1685,19 @@ pub struct MilestoneReached {
     pub reward_amount: i128,
 }
 
-pub fn emit_milestone_reached(e: &Env, group_id: u32, member: Address, milestone_pct: u32, reward_amount: i128) {
+pub fn emit_milestone_reached(
+    e: &Env,
+    group_id: u32,
+    member: Address,
+    milestone_pct: u32,
+    reward_amount: i128,
+) {
     MilestoneReached { group_id, member, milestone_pct, reward_amount }.publish(e);
 }
 
 // ── #375: Sealed-Bid (Commit-Reveal) Slot Auction Events ──────────────────────
 
+/// Event: A sealed-bid auction was opened with commit/reveal deadlines.
 #[contractevent]
 #[derive(Clone, Debug)]
 pub struct SealedAuctionOpened {
@@ -1734,6 +1707,7 @@ pub struct SealedAuctionOpened {
     pub reveal_until: u64,
 }
 
+/// Event: A sealed bid was committed (hash only; amount stays hidden).
 #[contractevent]
 #[derive(Clone, Debug)]
 pub struct SlotBidCommitted {
@@ -1742,6 +1716,7 @@ pub struct SlotBidCommitted {
     pub bidder: Address,
 }
 
+/// Event: A previously committed sealed bid was revealed and validated.
 #[contractevent]
 #[derive(Clone, Debug)]
 pub struct SlotBidRevealed {
@@ -1752,6 +1727,8 @@ pub struct SlotBidRevealed {
     pub bid_amount: i128,
 }
 
+/// Event: A sealed-bid auction was settled. `winning_bid` is 0 when no bid
+/// cleared the minimum reserve (slot left unallocated).
 #[contractevent]
 #[derive(Clone, Debug)]
 pub struct SealedAuctionSettled {
@@ -1761,7 +1738,13 @@ pub struct SealedAuctionSettled {
     pub winning_bid: i128,
 }
 
-pub fn emit_sealed_auction_opened(e: &Env, group_id: u32, round: u32, commit_until: u64, reveal_until: u64) {
+pub fn emit_sealed_auction_opened(
+    e: &Env,
+    group_id: u32,
+    round: u32,
+    commit_until: u64,
+    reveal_until: u64,
+) {
     SealedAuctionOpened { group_id, round, commit_until, reveal_until }.publish(e);
 }
 
@@ -1769,11 +1752,24 @@ pub fn emit_slot_bid_committed(e: &Env, group_id: u32, round: u32, bidder: Addre
     SlotBidCommitted { group_id, round, bidder }.publish(e);
 }
 
-pub fn emit_slot_bid_revealed(e: &Env, group_id: u32, round: u32, bidder: Address, desired_slot: u32, bid_amount: i128) {
+pub fn emit_slot_bid_revealed(
+    e: &Env,
+    group_id: u32,
+    round: u32,
+    bidder: Address,
+    desired_slot: u32,
+    bid_amount: i128,
+) {
     SlotBidRevealed { group_id, round, bidder, desired_slot, bid_amount }.publish(e);
 }
 
-pub fn emit_sealed_auction_settled(e: &Env, group_id: u32, round: u32, winner: Address, winning_bid: i128) {
+pub fn emit_sealed_auction_settled(
+    e: &Env,
+    group_id: u32,
+    round: u32,
+    winner: Address,
+    winning_bid: i128,
+) {
     SealedAuctionSettled { group_id, round, winner, winning_bid }.publish(e);
 }
 

@@ -15,9 +15,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahjoo-token-whitelist"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "ahjoor-errors"
+version = "0.1.0"
+
+[[package]]
 name = "ahjoor-escrow"
 version = "0.1.0"
 dependencies = [
+ "ahjoor-token-whitelist",
  "proptest",
  "soroban-sdk",
 ]
@@ -26,6 +38,7 @@ dependencies = [
 name = "ahjoor-payments"
 version = "0.1.0"
 dependencies = [
+ "ahjoor-token-whitelist",
  "proptest",
  "soroban-sdk",
 ]
@@ -35,6 +48,7 @@ name = "ahjoor-refund"
 version = "0.1.0"
 dependencies = [
  "ahjoor-payments",
+ "ahjoor-token-whitelist",
  "proptest",
  "soroban-sdk",
 ]

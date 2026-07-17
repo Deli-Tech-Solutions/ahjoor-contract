@@ -10699,7 +10699,7 @@ impl AhjoorContract {
                 for idx in 0..n {
                     if idx == i {
                         new_items.push_back(items.get(j).unwrap());
-                    } else if idx as u32 == j {
+                    } else if idx == j {
                         new_items.push_back(items.get(i).unwrap());
                     } else {
                         new_items.push_back(items.get(idx).unwrap());
