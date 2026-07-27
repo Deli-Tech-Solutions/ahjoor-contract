@@ -10,8 +10,8 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-ahjoor-token-whitelist = { path = "../ahjoor-token-whitelist" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+ahjoor-token-whitelist = { path = "../ahjoor-token-whitelist" }
 proptest = "1"

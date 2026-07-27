@@ -1,10 +1,30 @@
 #![no_std]
-use ahjoor_token_whitelist::TokenWhitelistClient;
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, token, Address, Bytes, BytesN, Env, Map, String,
     Symbol, Vec,
 };
+
+// ---------------------------------------------------------------------------
+// Minimal token-whitelist client — deliberately not a dependency on the
+// ahjoor-token-whitelist crate itself. Depending on that crate directly pulls
+// its `#[contract]` implementation into this contract's wasm build, and under
+// the release LTO profile the two contracts' identically-named exported
+// entry points (e.g. `initialize`) collide at link time ("symbol multiply
+// defined"). A local `#[contractclient]` trait only generates cross-contract
+// call stubs, not exported symbols, so it avoids that collision.
+// ---------------------------------------------------------------------------
+mod token_whitelist_client {
+    use soroban_sdk::{contractclient, Address, Env};
+
+    #[allow(dead_code)]
+    #[contractclient(name = "TokenWhitelistClient")]
+    pub trait TokenWhitelistInterface {
+        fn is_whitelisted(env: Env, token: Address) -> bool;
+        fn is_token_allowed_for_contract(env: Env, contract_id: Address, token: Address) -> bool;
+    }
+}
+use token_whitelist_client::TokenWhitelistClient;
 
 // Instance storage: config, counters, and active round state (bounded, shared TTL)
 pub(crate) const INSTANCE_LIFETIME_THRESHOLD: u32 = 100_000;
