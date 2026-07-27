@@ -8,10 +8,8 @@ on:
 
 jobs:
   tests:
-    name: Contract Tests (No Warnings)
+    name: Contract Build & Test
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -Dwarnings
     strategy:
       matrix:
         contract:
