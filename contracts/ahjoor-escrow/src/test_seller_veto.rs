@@ -34,7 +34,7 @@ fn setup_veto<'a>() -> (Env, AhjoorEscrowContractClient<'a>, Address, Address, A
 
 #[test]
 fn test_buyer_veto_refunds_buyer() {
-    let (env, client, admin, buyer, seller, _arbiter, _token_addr, token_client, _) = setup_veto();
+    let (env, client, _admin, buyer, seller, _arbiter, _token_addr, token_client, _) = setup_veto();
     let escrow_id = 0u32;
     let new_seller = Address::generate(&env);
 
@@ -88,7 +88,7 @@ fn test_window_expiry_auto_approves() {
 
 #[test]
 fn test_veto_window_configurable() {
-    let (env, client, admin, _buyer, _seller, _arbiter, _token_addr, _token_client, _) = setup_veto();
+    let (_env, client, admin, _buyer, _seller, _arbiter, _token_addr, _token_client, _) = setup_veto();
     // Just verify admin can set the window without panic
     client.set_seller_transfer_veto_window(&admin, &200u32);
 }

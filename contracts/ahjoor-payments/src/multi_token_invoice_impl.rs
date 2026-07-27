@@ -1,9 +1,18 @@
 #![allow(dead_code)]
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Bytes,
-    BytesN, Env, Map, String, Symbol, Vec,
+    contractevent, panic_with_error, token, Address, BytesN, Env, Map, String, Symbol, Vec,
 };
 use crate::multi_token_invoice::*;
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CrossTokenSettlement {
+    pub invoice_id: u32,
+    pub payment_token: Address,
+    pub payment_amount: i128,
+    pub invoiced_token: Address,
+    pub amount_in_base: i128,
+}
 
 // Storage keys
 const INVOICE_COUNTER_KEY: &str = "invoice_counter";
@@ -326,12 +335,10 @@ impl MultiTokenInvoiceImpl {
     }
 
     /// Get invoice payment history
-    pub fn get_invoice_payments(env: &Env, invoice_id: u32) -> Vec<InvoicePayment> {
-        let mut payments = Vec::new(env);
-
+    pub fn get_invoice_payments(env: &Env, _invoice_id: u32) -> Vec<InvoicePayment> {
         // This would require iterating through all payments and filtering by invoice_id
         // For now, return empty vector - in production, use a proper indexing strategy
-        payments
+        Vec::new(env)
     }
 
     /// Settle invoices in batch
@@ -604,16 +611,14 @@ impl MultiTokenInvoiceImpl {
         env.storage().persistent().set(&settlement_key, &settlement_record);
 
         // Emit cross-token settlement event
-        env.events().publish(
-            (Symbol::new(env, "CrossTokenSettlement"),),
-            (
-                invoice_id,
-                payment_token,
-                payment_amount,
-                invoice.base_currency,
-                amount_in_base,
-            ),
-        );
+        CrossTokenSettlement {
+            invoice_id,
+            payment_token,
+            payment_amount,
+            invoiced_token: invoice.base_currency,
+            amount_in_base,
+        }
+        .publish(env);
 
         payment
     }

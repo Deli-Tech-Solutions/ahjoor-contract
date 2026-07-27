@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{contractevent, Address, BytesN, Env, String, Vec};
 
 /// Event: Escrow created
 #[contractevent]
@@ -901,28 +901,81 @@ pub fn emit_arbiter_timeout_penalty_applied(e: &Env, arbiter: Address, total_tim
 }
 
 // #215: Time-locked escrow events
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TLEscrowCreated {
+    pub escrow_id: u32,
+    pub unlock_at: u64,
+    pub beneficiary: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TLFundsClaimed {
+    pub escrow_id: u32,
+    pub beneficiary: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TLEscrowCancelled {
+    pub escrow_id: u32,
+    pub buyer: Address,
+}
+
 pub fn emit_timelocked_escrow_created(e: &Env, escrow_id: u32, unlock_at: u64, beneficiary: Address) {
-    e.events().publish((Symbol::new(e, "TLEscrowCreated"),), (escrow_id, unlock_at, beneficiary));
+    TLEscrowCreated { escrow_id, unlock_at, beneficiary }.publish(e);
 }
 pub fn emit_timelocked_funds_claimed(e: &Env, escrow_id: u32, beneficiary: Address, amount: i128) {
-    e.events().publish((Symbol::new(e, "TLFundsClaimed"),), (escrow_id, beneficiary, amount));
+    TLFundsClaimed { escrow_id, beneficiary, amount }.publish(e);
 }
 pub fn emit_timelocked_escrow_cancelled(e: &Env, escrow_id: u32, buyer: Address) {
-    e.events().publish((Symbol::new(e, "TLEscrowCancelled"),), (escrow_id, buyer));
+    TLEscrowCancelled { escrow_id, buyer }.publish(e);
 }
 
 // #229: Mutual Cancellation events
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CancelRequested {
+    pub escrow_id: u32,
+    pub initiator: Address,
+    pub expires_at: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CancelAccepted {
+    pub escrow_id: u32,
+    pub buyer: Address,
+    pub amount_returned: i128,
+    pub penalty: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CancelRejected {
+    pub escrow_id: u32,
+    pub rejector: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CancelExpired {
+    pub escrow_id: u32,
+}
+
 pub fn emit_cancellation_requested(e: &Env, escrow_id: u32, initiator: Address, expires_at: u64) {
-    e.events().publish((Symbol::new(e, "CancelRequested"),), (escrow_id, initiator, expires_at));
+    CancelRequested { escrow_id, initiator, expires_at }.publish(e);
 }
 pub fn emit_cancellation_accepted(e: &Env, escrow_id: u32, buyer: Address, amount_returned: i128, penalty: i128) {
-    e.events().publish((Symbol::new(e, "CancelAccepted"),), (escrow_id, buyer, amount_returned, penalty));
+    CancelAccepted { escrow_id, buyer, amount_returned, penalty }.publish(e);
 }
 pub fn emit_cancellation_rejected(e: &Env, escrow_id: u32, rejector: Address) {
-    e.events().publish((Symbol::new(e, "CancelRejected"),), (escrow_id, rejector));
+    CancelRejected { escrow_id, rejector }.publish(e);
 }
 pub fn emit_cancellation_expired(e: &Env, escrow_id: u32) {
-    e.events().publish((Symbol::new(e, "CancelExpired"),), (escrow_id,));
+    CancelExpired { escrow_id }.publish(e);
 }
 
 // #225: Escrow Top-Up Event
@@ -979,11 +1032,16 @@ pub fn emit_collateral_returned(e: &Env, escrow_id: u32, seller: Address, amount
 
 // --- Issue #361: Collateral Health Alert ---
 
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct CollateralHealthAlert {
+    pub escrow_id: u32,
+    pub current_ratio_bps: u32,
+    pub required_ratio_bps: u32,
+}
+
 pub fn emit_collateral_health_alert(e: &Env, escrow_id: u32, current_ratio_bps: u32, required_ratio_bps: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "CollateralHealthAlert"),),
-        (escrow_id, current_ratio_bps, required_ratio_bps),
-    );
+    CollateralHealthAlert { escrow_id, current_ratio_bps, required_ratio_bps }.publish(e);
 }
 
 // --- Issue #241: Delivery Proof Hash ---
@@ -1016,32 +1074,51 @@ pub fn emit_delivery_proof_submitted(
 
 // #244: Seller Role Transfer Veto Events
 
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SellerTransferProposed {
+    pub escrow_id: u32,
+    pub original_seller: Address,
+    pub new_seller: Address,
+    pub veto_deadline: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SellerTransferVetoed {
+    pub escrow_id: u32,
+    pub buyer: Address,
+    pub refund_amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SellerTransferApproved {
+    pub escrow_id: u32,
+    pub new_seller: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SellerTransferExpired {
+    pub escrow_id: u32,
+    pub new_seller: Address,
+}
+
 pub fn emit_seller_transfer_proposed(e: &Env, escrow_id: u32, original_seller: Address, new_seller: Address, veto_deadline: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SellerTransferProposed"),),
-        (escrow_id, original_seller, new_seller, veto_deadline),
-    );
+    SellerTransferProposed { escrow_id, original_seller, new_seller, veto_deadline }.publish(e);
 }
 
 pub fn emit_seller_transfer_vetoed(e: &Env, escrow_id: u32, buyer: Address, refund_amount: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SellerTransferVetoed"),),
-        (escrow_id, buyer, refund_amount),
-    );
+    SellerTransferVetoed { escrow_id, buyer, refund_amount }.publish(e);
 }
 
 pub fn emit_seller_transfer_approved(e: &Env, escrow_id: u32, new_seller: Address) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SellerTransferApproved"),),
-        (escrow_id, new_seller),
-    );
+    SellerTransferApproved { escrow_id, new_seller }.publish(e);
 }
 
 pub fn emit_seller_transfer_expired_approved(e: &Env, escrow_id: u32, new_seller: Address) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SellerTransferExpired"),),
-        (escrow_id, new_seller),
-    );
+    SellerTransferExpired { escrow_id, new_seller }.publish(e);
 }
 
 // --- Issue #146: Post-Resolution Rating System ---
@@ -1084,24 +1161,15 @@ pub fn emit_resolution_cooling_off(
     arbiter: Address,
     cooling_off_until: u64,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "ResolutionCoolingOff"),),
-        (escrow_id, buyer_percent, arbiter, cooling_off_until),
-    );
+    ResolutionCoolingOff { escrow_id, buyer_percent, arbiter, cooling_off_ends_at: cooling_off_until }.publish(e);
 }
 
 pub fn emit_resolution_flagged(e: &Env, escrow_id: u32, caller: Address, reason_hash: soroban_sdk::BytesN<32>) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "ResolutionFlagged"),),
-        (escrow_id, caller, reason_hash),
-    );
+    ResolutionFlagged { escrow_id, flagger: caller, reason_hash }.publish(e);
 }
 
 pub fn emit_resolution_finalized(e: &Env, escrow_id: u32, buyer_percent: u32, arbiter: Address) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "ResolutionFinalized"),),
-        (escrow_id, buyer_percent, arbiter),
-    );
+    ResolutionFinalized { escrow_id, buyer_percent, finalized_by: arbiter }.publish(e);
 }
 
 // --- Issue #219: Multi-Party Split Release ---
@@ -1159,15 +1227,6 @@ pub struct AmendmentApplied {
     pub new_deadline: u64,
 }
 
-/// Event: Amendment proposal cancelled
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct AmendmentCancelled {
-    pub escrow_id: u32,
-    pub nonce: u32,
-    pub cancelled_by: Address,
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn emit_amendment_proposed(
     e: &Env,
@@ -1220,51 +1279,7 @@ pub fn emit_amendment_applied(
     .publish(e);
 }
 
-pub fn emit_amendment_cancelled(e: &Env, escrow_id: u32, nonce: u32, cancelled_by: Address) {
-    AmendmentCancelled {
-        escrow_id,
-        nonce,
-        cancelled_by,
-    }
-    .publish(e);
-}
-
 // --- Inspector Events (#316) ---
-
-/// Event: Inspection result submitted
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct InspectionResultSubmitted {
-    pub escrow_id: u32,
-    pub inspector: Address,
-    pub approved: bool,
-    pub report_hash: BytesN<32>,
-}
-
-/// Event: Inspector updated
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct InspectorUpdated {
-    pub escrow_id: u32,
-    pub old_inspector: Address,
-    pub new_inspector: Address,
-}
-
-pub fn emit_inspection_result_submitted(
-    e: &Env,
-    escrow_id: u32,
-    inspector: Address,
-    approved: bool,
-    report_hash: BytesN<32>,
-) {
-    InspectionResultSubmitted {
-        escrow_id,
-        inspector,
-        approved,
-        report_hash,
-    }
-    .publish(e);
-}
 
 pub fn emit_multi_seller_escrow_released(
     env: &Env,
@@ -1380,18 +1395,27 @@ pub fn emit_inspector_score_updated(
 
 // ── #332: Milestone BPS Events ────────────────────────────────────────────────
 
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct MilestoneSubmitted {
+    pub escrow_id: u32,
+    pub milestone_index: u32,
+    pub delivery_hash: BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct MilestoneRejected {
+    pub escrow_id: u32,
+    pub milestone_index: u32,
+}
+
 pub fn emit_milestone_submitted(e: &Env, escrow_id: u32, milestone_index: u32, delivery_hash: BytesN<32>) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "MilestoneSubmitted"),),
-        (escrow_id, milestone_index, delivery_hash),
-    );
+    MilestoneSubmitted { escrow_id, milestone_index, delivery_hash }.publish(e);
 }
 
 pub fn emit_milestone_rejected(e: &Env, escrow_id: u32, milestone_index: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "MilestoneRejected"),),
-        (escrow_id, milestone_index),
-    );
+    MilestoneRejected { escrow_id, milestone_index }.publish(e);
 }
 
 /// Event: Seller acknowledged top-up
@@ -1413,20 +1437,6 @@ pub fn emit_top_up_acknowledged(
         escrow_id,
         seller,
         new_total,
-    }
-    .publish(e);
-}
-
-pub fn emit_inspector_updated(
-    e: &Env,
-    escrow_id: u32,
-    old_inspector: Address,
-    new_inspector: Address,
-) {
-    InspectorUpdated {
-        escrow_id,
-        old_inspector,
-        new_inspector,
     }
     .publish(e);
 }

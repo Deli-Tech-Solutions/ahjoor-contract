@@ -535,8 +535,6 @@ pub struct MilestoneState {
 
 const MAX_PROTOCOL_FEE_BPS: u32 = 200; // 2%
 const MAX_ARBITER_FEE_BPS: u32 = 1_000; // 10%
-const DEFAULT_RESOLUTION_COOLING_OFF_SECONDS: u64 = 24 * 60 * 60; // 24 hours
-const DEFAULT_SELLER_TRANSFER_VETO_WINDOW: u32 = 100; // ledgers
 const DEFAULT_AMENDMENT_EXPIRY_SECONDS: u64 = 7 * 24 * 60 * 60; // 7 days
 /// #420: Default veto cooldown — 7 days in seconds.
 const DEFAULT_VETO_COOLDOWN_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -4223,6 +4221,11 @@ impl AhjoorEscrowContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        events::emit_seller_share_delegated(&env, escrow_id, seller, delegate);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     /// Buyer rejects partial release request
@@ -4231,7 +4234,7 @@ impl AhjoorEscrowContract {
         buyer: Address,
         escrow_id: u32,
         request_id: u64,
-        reason_hash: BytesN<32>,
+        _reason_hash: BytesN<32>,
     ) {
         Self::require_not_paused(&env);
         buyer.require_auth();
@@ -6732,6 +6735,8 @@ impl AhjoorEscrowContract {
                 PERSISTENT_LIFETIME_THRESHOLD,
                 PERSISTENT_BUMP_AMOUNT,
             );
+
+            events::emit_multi_party_escrow_released(&env, escrow_id, total);
         }
 
         env.storage()
@@ -7703,6 +7708,7 @@ impl AhjoorEscrowContract {
             panic!("At least one seller required");
         }
         let primary_seller = sellers.get(0).unwrap().0;
+        let sellers_for_event = sellers.clone();
         let escrow_id = Self::create_escrow_core(
             &env,
             &buyer,
@@ -7751,6 +7757,7 @@ impl AhjoorEscrowContract {
                 PERSISTENT_BUMP_AMOUNT,
             );
         }
+        events::emit_multi_seller_escrow_created(&env, escrow_id, sellers_for_event);
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);

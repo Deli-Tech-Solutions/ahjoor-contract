@@ -125,7 +125,7 @@ fn test_flag_after_window_expired() {
 #[test]
 #[should_panic(expected = "Cooling-off window has not elapsed")]
 fn test_finalize_before_window_elapsed() {
-    let (env, client, admin, _buyer, _seller, arbiter, _token_addr, _token_client, _) = setup_cooling_off();
+    let (_env, client, admin, _buyer, _seller, arbiter, _token_addr, _token_client, _) = setup_cooling_off();
     let escrow_id = 0u32;
     let cooling_off = 3600u64;
 

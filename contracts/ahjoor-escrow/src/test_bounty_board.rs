@@ -5,7 +5,7 @@ use crate::{
 };
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
-    token, vec, Address, BytesN, Env, String, Vec,
+    token, vec, Address, BytesN, Env, Vec,
 };
 
 fn create_token_contract<'a>(e: &Env, admin: &Address) -> token::StellarAssetClient<'a> {
@@ -37,7 +37,7 @@ fn test_create_bounty_success() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -83,7 +83,7 @@ fn test_create_bounty_zero_amount() {
 
     let token = create_token_contract(&env, &token_admin);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -114,7 +114,7 @@ fn test_create_bounty_past_claim_deadline() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -146,7 +146,7 @@ fn test_create_bounty_invalid_deadlines() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -177,7 +177,7 @@ fn test_claim_bounty_success() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -219,7 +219,7 @@ fn test_claim_bounty_duplicate() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -254,7 +254,7 @@ fn test_claim_bounty_after_deadline() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -289,7 +289,7 @@ fn test_submit_bounty_work_success() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -330,7 +330,7 @@ fn test_submit_bounty_work_wrong_solver() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -367,7 +367,7 @@ fn test_submit_bounty_work_after_deadline() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -405,7 +405,7 @@ fn test_approve_bounty_submission_success() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -451,7 +451,7 @@ fn test_approve_bounty_without_submission() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -486,7 +486,7 @@ fn test_reject_bounty_submission_and_reclaim() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -540,7 +540,7 @@ fn test_reject_bounty_max_rejections() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -584,7 +584,7 @@ fn test_cancel_bounty_unclaimed() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -627,7 +627,7 @@ fn test_cancel_bounty_after_inspection_fee() {
     token_sac.mint(&buyer, &1000);
     let token_client = token::Client::new(&env, &token_sac.address);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -698,7 +698,7 @@ fn test_cancel_bounty_claimed() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -732,7 +732,7 @@ fn test_full_bounty_award_flow() {
     let token = create_token_contract(&env, &token_admin);
     token.mint(&buyer, &1000);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -784,7 +784,7 @@ fn test_set_max_bounty_rejection_rounds() {
 
     let admin = Address::generate(&env);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);

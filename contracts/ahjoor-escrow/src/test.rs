@@ -3632,6 +3632,7 @@ use escrow_mock_oracle::EscrowMockOracle;
 struct OracleEscrowSetup<'a> {
     env: Env,
     client: AhjoorEscrowContractClient<'a>,
+    #[allow(dead_code)]
     admin: Address,
     token_addr: Address,
     token_client: TokenClient<'a>,

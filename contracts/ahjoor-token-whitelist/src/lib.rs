@@ -243,9 +243,17 @@ impl TokenWhitelistContract {
     pub fn set_token_metadata(env: Env, admin: Address, token: Address, decimals: u32, symbol: soroban_sdk::String, logo_hash: BytesN<32>, canonical_oracle: Option<Address>) {
         admin.require_auth();
         Self::require_admin(&env, &admin);
-        let md = TokenMetadata { decimals, symbol: symbol.clone(), logo_hash, canonical_oracle };
+        let old_oracle = env
+            .storage()
+            .persistent()
+            .get::<_, TokenMetadata>(&DataKey::TokenMetadata(token.clone()))
+            .and_then(|md| md.canonical_oracle);
+        let md = TokenMetadata { decimals, symbol: symbol.clone(), logo_hash, canonical_oracle: canonical_oracle.clone() };
         env.storage().persistent().set(&DataKey::TokenMetadata(token.clone()), &md);
         env.storage().persistent().extend_ttl(&DataKey::TokenMetadata(token.clone()), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        if old_oracle != canonical_oracle {
+            events::emit_token_oracle_updated(&env, token.clone(), old_oracle, canonical_oracle);
+        }
         events::emit_token_metadata_set(&env, token, symbol, decimals);
     }
 

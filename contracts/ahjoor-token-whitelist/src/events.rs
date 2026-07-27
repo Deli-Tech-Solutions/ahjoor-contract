@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contractevent, Address, BytesN, Env};
 
 #[contractevent]
 #[derive(Clone, Debug)]
@@ -135,11 +135,15 @@ pub fn emit_token_suspension_lifted(e: &Env, token: Address, lifted_by: Address,
     TokenSuspensionLifted { token, lifted_by, ledger }.publish(e);
 }
 
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TokenAutoReinstated {
+    pub token: Address,
+    pub ledger: u32,
+}
+
 pub fn emit_token_auto_reinstated(e: &Env, token: Address, ledger: u32) {
-    e.events().publish(
-        (Symbol::new(e, "TokenAutoReinstated"),),
-        (token, ledger),
-    );
+    TokenAutoReinstated { token, ledger }.publish(e);
 }
 
 #[contractevent]
@@ -231,6 +235,3 @@ pub fn emit_listing_enacted(e: &Env, proposal_id: u32, token: Address) {
 pub fn emit_listing_vetoed(e: &Env, proposal_id: u32, reason_hash: BytesN<32>) {
     ListingVetoed { proposal_id, reason_hash }.publish(e);
 }
-
-#[allow(dead_code)]
-fn _use_symbol(_: Symbol) {}

@@ -56,7 +56,7 @@ fn setup<'a>() -> Harness<'a> {
     let token_addr = token_sac.address.clone();
     let token = token::Client::new(&env, &token_addr);
 
-    let contract_id = env.register_contract(None, AhjoorEscrowContract);
+    let contract_id = env.register(AhjoorEscrowContract, ());
     let client = AhjoorEscrowContractClient::new(&env, &contract_id);
     client.initialize(&admin);
 

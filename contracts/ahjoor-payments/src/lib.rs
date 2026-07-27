@@ -72,12 +72,13 @@ const TEMP_LIFETIME_THRESHOLD: u32 = 10_000;
 const TEMP_BUMP_AMOUNT: u32 = 15_000;
 
 const DEFAULT_MAX_BATCH_SIZE: u32 = 20;
-/// Maximum number of tags per payment (#122)
+/// Maximum number of tags per payment (#122). Used by `create_payment_with_extras`,
+/// currently disabled pending export (see commented block below).
+#[allow(dead_code)]
 const MAX_TAGS: u32 = 3;
 /// Maximum number of line items in invoice (#128)
 const MAX_INVOICE_LINE_ITEMS: u32 = 20;
 const MAX_SETTLEMENT_BATCH_SIZE: u32 = 50;
-const SETTLEMENT_FEE_BPS: i128 = 0;
 const DEFAULT_DISPUTE_TIMEOUT: u64 = 7 * 24 * 60 * 60; // 7 days in seconds
 /// Default rate limit: effectively disabled until admin configures stricter values.
 const DEFAULT_RATE_LIMIT_MAX_PAYMENTS: u32 = u32::MAX;
@@ -3140,7 +3141,6 @@ impl AhjoorPaymentsContract {
         // Wait let's check the rest of the codebase to confirm!
         // Wait let's check the existing code for expires_at usage! For example, how is a payment considered expired?
         // Let's look for expire_payment or similar!
-        let now = env.ledger().timestamp();
         // Assuming 1 ledger is 5 seconds (common in Stellar Soroban), but wait - actually, maybe the user intended additional_ledgers to mean additional seconds? Wait, let's check the issue description again! Wait the issue says:
         // "merchant calls extend_payment_expiry(payment_id, additional_ledgers: u32) on a Pending payment before it expires, the contract advances expiry_ledger by additional_ledgers."
         // But wait in our current code, we don't have expiry_ledger - we have expires_at which is a timestamp in seconds! Oh! Wait let's check the existing codebase to see if there's an expiry_ledger field anywhere!
@@ -5232,7 +5232,7 @@ impl AhjoorPaymentsContract {
     }
 
     /// #327: Pause subscription with authority enforcement and pause count tracking.
-    pub fn pause_subscription_v2(env: Env, caller: Address, sub_id: u32, reason_hash: BytesN<32>) {
+    pub fn pause_subscription_v2(env: Env, caller: Address, sub_id: u32, _reason_hash: BytesN<32>) {
         Self::require_not_paused(&env);
         caller.require_auth();
 

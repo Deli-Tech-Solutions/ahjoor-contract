@@ -3,7 +3,6 @@
 use crate::{AhjoorEscrowContract, AhjoorEscrowContractClient, DisputeDefaultWinner};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    token::Client as TokenClient,
     token::StellarAssetClient as TokenAdminClient,
     Address, Env, String,
 };

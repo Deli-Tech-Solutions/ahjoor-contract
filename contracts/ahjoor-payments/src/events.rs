@@ -1335,17 +1335,27 @@ pub fn emit_recurring_invoice_completed(e: &Env, invoice_id: u32) {
 }
 
 // #231: Withdrawal Rate Limiting Events
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct WdrlLimitSet {
+    pub merchant: Address,
+    pub window_seconds: u64,
+    pub cap: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct WdrlLimitExceeded {
+    pub merchant: Address,
+    pub attempted: i128,
+    pub cap: i128,
+}
+
 pub fn emit_withdrawal_rate_limit_set(e: &Env, merchant: Address, window_seconds: u64, cap: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "WdrlLimitSet"),),
-        (merchant, window_seconds, cap),
-    );
+    WdrlLimitSet { merchant, window_seconds, cap }.publish(e);
 }
 pub fn emit_withdrawal_rate_limit_exceeded(e: &Env, merchant: Address, attempted: i128, cap: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "WdrlLimitExceeded"),),
-        (merchant, attempted, cap),
-    );
+    WdrlLimitExceeded { merchant, attempted, cap }.publish(e);
 }
 
 // #239: Loyalty Points Events
@@ -1664,21 +1674,61 @@ pub fn emit_tip_split(
 }
 
 // Multi-sig approval events
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct PmtApprovalExp {
+    pub payment_id: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct PmtApproved {
+    pub payment_id: u32,
+    pub signer: Address,
+}
+
 pub fn emit_payment_approval_expired(e: &Env, payment_id: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "PmtApprovalExp"),),
-        (payment_id,),
-    );
+    PmtApprovalExp { payment_id }.publish(e);
 }
 
 pub fn emit_payment_approved(e: &Env, payment_id: u32, signer: Address) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "PmtApproved"),),
-        (payment_id, signer),
-    );
+    PmtApproved { payment_id, signer }.publish(e);
 }
 
 // Voucher events
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct VoucherIssued {
+    pub merchant: Address,
+    pub code_hash: soroban_sdk::BytesN<32>,
+    pub discount_value: u32,
+    pub max_uses: u32,
+    pub expiry: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct VoucherRevoked {
+    pub merchant: Address,
+    pub code_hash: soroban_sdk::BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct VoucherRedeemed {
+    pub merchant: Address,
+    pub code_hash: soroban_sdk::BytesN<32>,
+    pub customer: Address,
+    pub discount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct VoucherExhausted {
+    pub merchant: Address,
+    pub code_hash: soroban_sdk::BytesN<32>,
+}
+
 pub fn emit_voucher_issued(
     e: &Env,
     merchant: Address,
@@ -1688,17 +1738,11 @@ pub fn emit_voucher_issued(
     max_uses: u32,
     expiry: u64,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "VoucherIssued"),),
-        (merchant, code_hash, discount_value, max_uses, expiry),
-    );
+    VoucherIssued { merchant, code_hash, discount_value, max_uses, expiry }.publish(e);
 }
 
 pub fn emit_voucher_revoked(e: &Env, merchant: Address, code_hash: soroban_sdk::BytesN<32>) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "VoucherRevoked"),),
-        (merchant, code_hash),
-    );
+    VoucherRevoked { merchant, code_hash }.publish(e);
 }
 
 pub fn emit_voucher_redeemed(
@@ -1708,29 +1752,27 @@ pub fn emit_voucher_redeemed(
     customer: Address,
     discount: i128,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "VoucherRedeemed"),),
-        (merchant, code_hash, customer, discount),
-    );
+    VoucherRedeemed { merchant, code_hash, customer, discount }.publish(e);
 }
 
 pub fn emit_voucher_exhausted(e: &Env, merchant: Address, code_hash: soroban_sdk::BytesN<32>) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "VoucherExhausted"),),
-        (merchant, code_hash),
-    );
+    VoucherExhausted { merchant, code_hash }.publish(e);
 }
 
 // External ID indexing event
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct PmtIndexedExtId {
+    pub payment_id: u32,
+    pub ext_id: soroban_sdk::BytesN<32>,
+}
+
 pub fn emit_payment_indexed_by_external_id(
     e: &Env,
     payment_id: u32,
     ext_id: soroban_sdk::BytesN<32>,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "PmtIndexedExtId"),),
-        (payment_id, ext_id),
-    );
+    PmtIndexedExtId { payment_id, ext_id }.publish(e);
 }
 
 // Consent record events (#307)
@@ -1877,6 +1919,30 @@ pub fn emit_merchant_kyb_revoked(env: &Env, merchant: Address) {
 }
 // ── #329: Failed Auto-Debit Retry Queue Events ────────────────────────────────
 
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DebitFailed {
+    pub record_id: u32,
+    pub plan_id: u32,
+    pub attempt_number: u32,
+    pub next_retry_ledger: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DebitRetrySucceeded {
+    pub record_id: u32,
+    pub plan_id: u32,
+    pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DebitAbandoned {
+    pub record_id: u32,
+    pub plan_id: u32,
+}
+
 pub fn emit_debit_failed(
     e: &Env,
     record_id: u32,
@@ -1884,27 +1950,34 @@ pub fn emit_debit_failed(
     attempt_number: u32,
     next_retry_ledger: u64,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "DebitFailed"),),
-        (record_id, plan_id, attempt_number, next_retry_ledger),
-    );
+    DebitFailed { record_id, plan_id, attempt_number, next_retry_ledger }.publish(e);
 }
 
 pub fn emit_debit_retry_succeeded(e: &Env, record_id: u32, plan_id: u32, amount: i128) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "DebitRetrySucceeded"),),
-        (record_id, plan_id, amount),
-    );
+    DebitRetrySucceeded { record_id, plan_id, amount }.publish(e);
 }
 
 pub fn emit_debit_abandoned(e: &Env, record_id: u32, plan_id: u32) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "DebitAbandoned"),),
-        (record_id, plan_id),
-    );
+    DebitAbandoned { record_id, plan_id }.publish(e);
 }
 
 // --- #327: Subscription Pause/Resume with Prorated Billing ---
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SubscriptionPausedV2 {
+    pub sub_id: u32,
+    pub paused_by: Address,
+    pub paused_at_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct SubscriptionResumedV2 {
+    pub sub_id: u32,
+    pub resumed_by: Address,
+    pub next_due_ledger: u32,
+}
 
 pub fn emit_subscription_paused_v2(
     e: &Env,
@@ -1912,10 +1985,7 @@ pub fn emit_subscription_paused_v2(
     paused_by: Address,
     paused_at_ledger: u32,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SubscriptionPausedV2"),),
-        (sub_id, paused_by, paused_at_ledger),
-    );
+    SubscriptionPausedV2 { sub_id, paused_by, paused_at_ledger }.publish(e);
 }
 
 pub fn emit_subscription_resumed_v2(
@@ -1924,13 +1994,26 @@ pub fn emit_subscription_resumed_v2(
     resumed_by: Address,
     next_due_ledger: u32,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "SubscriptionResumedV2"),),
-        (sub_id, resumed_by, next_due_ledger),
-    );
+    SubscriptionResumedV2 { sub_id, resumed_by, next_due_ledger }.publish(e);
 }
 
 // ── #351: Recurring Payment Scheduler ────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct RecurringExec {
+    pub schedule_id: u32,
+    pub cycle: u32,
+    pub amount: i128,
+    pub next_due: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct RecurringCancel {
+    pub schedule_id: u32,
+    pub payer: soroban_sdk::Address,
+}
 
 pub fn emit_recurring_payment_executed(
     e: &soroban_sdk::Env,
@@ -1939,17 +2022,11 @@ pub fn emit_recurring_payment_executed(
     amount: i128,
     next_due: u64,
 ) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "RecurringExec"),),
-        (schedule_id, cycle, amount, next_due),
-    );
+    RecurringExec { schedule_id, cycle, amount, next_due }.publish(e);
 }
 
 pub fn emit_recurring_payment_cancelled(e: &soroban_sdk::Env, schedule_id: u32, payer: soroban_sdk::Address) {
-    e.events().publish(
-        (soroban_sdk::Symbol::new(e, "RecurringCancel"),),
-        (schedule_id, payer),
-    );
+    RecurringCancel { schedule_id, payer }.publish(e);
 }
 
 // ── #358: Buyer Trust Tier Events ────────────────────────────────────────────

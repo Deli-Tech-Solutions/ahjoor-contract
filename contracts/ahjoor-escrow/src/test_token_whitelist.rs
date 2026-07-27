@@ -1,13 +1,10 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
-    Address, Env, IntoVal,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn create_token_contract(e: &Env) -> Address {
-    e.register_stellar_asset_contract(Address::generate(e))
+    e.register_stellar_asset_contract_v2(Address::generate(e)).address()
 }
 
 fn create_funded_token(e: &Env, admin: &Address, buyer: &Address, amount: i128) -> Address {
@@ -21,7 +18,7 @@ fn create_whitelist_contract(e: &Env) -> Address {
 }
 
 fn create_escrow_contract(e: &Env) -> Address {
-    e.register_contract(None, AhjoorEscrowContract)
+    e.register(AhjoorEscrowContract, ())
 }
 
 #[test]
