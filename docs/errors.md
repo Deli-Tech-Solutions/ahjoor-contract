@@ -319,3 +319,27 @@ Defined in `contracts/ahjoor-token-whitelist/src/lib.rs`.
 | 6 | QuotaExceeded | ahjoor-token-whitelist | Token volume quota for the current period has been exceeded. |
 | 7 | TokenAlreadyHasQuota | ahjoor-token-whitelist | Token already has a quota configured. |
 | 8 | TokenHasNoQuota | ahjoor-token-whitelist | Token has no quota configured. |
+
+### `is_token_allowed_for_contract` semantics
+
+`is_token_allowed_for_contract(contract_id, token)` is the check consumer
+contracts (ahjoor-rosca, ahjoor-escrow, ahjoor-payments, ahjoor-refund) call
+before accepting a token. Evaluation order:
+
+1. If a per-contract `ContractTokenAllowlist(contract_id, token)` entry
+   exists and has not expired (permanent entries, set with `expiry_ledger =
+   None`, never expire), the entry would normally grant access — **but this
+   grant is always cross-checked against `SuspensionRecord(token)`**. An
+   active suspension (set via `suspend_token_timed`) overrides the
+   per-contract entry and the call returns `false`, regardless of the
+   entry's expiry. A `ContractAllowanceSuspended` event is emitted in this
+   case so the override is observable off-chain.
+2. Otherwise, the check falls back to `is_token_allowed(token)` (global
+   whitelist membership plus suspension status).
+
+This means a token suspended via `suspend_token_timed` is rejected by every
+consumer contract even if a no-expiry `ContractTokenAllowlist` entry exists
+for it — a per-contract allowance can never be used to permanently bypass an
+incident-response suspension. Once the suspension is lifted or naturally
+expires, a previously-overridden contract-level entry grants access again
+without needing to be re-created.

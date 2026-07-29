@@ -1,5 +1,6 @@
 use soroban_sdk::{contractclient, Address, BytesN, Env};
 
+use crate::ContractAllowlistEntry;
 use crate::Error;
 use crate::TokenQuota;
 
@@ -26,7 +27,7 @@ pub trait TokenWhitelistInterface {
         env: Env,
         contract_id: Address,
         token: Address,
-    ) -> Option<Option<u32>>;
+    ) -> Option<ContractAllowlistEntry>;
 
     fn add_token(env: Env, admin: Address, token: Address);
 
