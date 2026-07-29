@@ -1047,6 +1047,98 @@ fn test_resolve_dispute_invalid_percent_panics() {
     s.client.resolve_dispute(&arbiter, &escrow_id, &101u32);
 }
 
+#[test]
+fn test_resolve_dispute_split_forfeits_collateral_proportionally() {
+    // #4: a partial (non-binary) split verdict must still apply the existing
+    // collateral-forfeiture mechanics correctly — any buyer_percent > 0 is
+    // "buyer-favoured" for collateral purposes, forfeiting collateral_forfeit_bps
+    // of the seller's collateral to the buyer regardless of the exact split.
+    let s = setup();
+    let buyer = Address::generate(&s.env);
+    let seller = Address::generate(&s.env);
+    let arbiter = Address::generate(&s.env);
+    s.token_admin_client.mint(&buyer, &1000);
+    s.token_admin_client.mint(&seller, &200);
+
+    let deadline = s.env.ledger().timestamp() + 1000;
+    let mut sellers = Vec::new(&s.env);
+    sellers.push_back((seller.clone(), 10_000u32));
+
+    let escrow_id = s.client.create_multi_seller_escrow(
+        &buyer,
+        &sellers,
+        &arbiter,
+        &1000,
+        &s.token_addr,
+        &deadline,
+        &None,
+        &2_000u32, // required_collateral_bps = 20% of amount = 200
+        &5_000u32, // collateral_forfeit_bps = 50%
+        &1_000u64, // collateral deposit window (seconds)
+    );
+
+    let escrow = s.client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::AwaitingCollateral);
+
+    s.client.deposit_collateral(&seller, &escrow_id);
+    let escrow = s.client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::Active);
+
+    s.client.dispute_escrow(&buyer, &escrow_id, &String::from_str(&s.env, "defect"), &1000);
+
+    // 70% buyer / 30% seller split — buyer-favoured, so collateral is forfeited.
+    s.client.resolve_dispute(&arbiter, &escrow_id, &70u32);
+
+    // distributable = 1000 (no fees configured); buyer_amount=700, seller_amount=300
+    // collateral=200; forfeit=200*50%=100 to buyer; 100 returned to seller
+    assert_eq!(s.token_client.balance(&buyer), 700 + 100);
+    assert_eq!(s.token_client.balance(&seller), 300 + 100);
+    assert_eq!(s.token_client.balance(&s.client.address), 0);
+
+    let escrow = s.client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::Resolved);
+}
+
+#[test]
+fn test_resolve_dispute_full_seller_win_returns_full_collateral() {
+    // buyer_percent == 0 is the only case where collateral is NOT forfeited at all.
+    let s = setup();
+    let buyer = Address::generate(&s.env);
+    let seller = Address::generate(&s.env);
+    let arbiter = Address::generate(&s.env);
+    s.token_admin_client.mint(&buyer, &1000);
+    s.token_admin_client.mint(&seller, &200);
+
+    let deadline = s.env.ledger().timestamp() + 1000;
+    let mut sellers = Vec::new(&s.env);
+    sellers.push_back((seller.clone(), 10_000u32));
+
+    let escrow_id = s.client.create_multi_seller_escrow(
+        &buyer,
+        &sellers,
+        &arbiter,
+        &1000,
+        &s.token_addr,
+        &deadline,
+        &None,
+        &2_000u32,
+        &5_000u32,
+        &1_000u64,
+    );
+    s.client.deposit_collateral(&seller, &escrow_id);
+
+    s.client.dispute_escrow(&buyer, &escrow_id, &String::from_str(&s.env, "d"), &1000);
+    s.client.resolve_dispute(&arbiter, &escrow_id, &0u32);
+
+    // Full seller win: seller gets the full 200 collateral back, no forfeiture.
+    assert_eq!(s.token_client.balance(&buyer), 0);
+    assert_eq!(s.token_client.balance(&seller), 1000 + 200);
+    assert_eq!(s.token_client.balance(&s.client.address), 0);
+
+    let escrow = s.client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::Released);
+}
+
 // ===========================================================================
 //  Protocol Fee Tests
 // ===========================================================================

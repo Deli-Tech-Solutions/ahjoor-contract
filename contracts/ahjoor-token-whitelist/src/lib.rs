@@ -99,6 +99,9 @@ pub enum DataKey {
     QuorumBps,
     ListingProposal(u32),
     VoteRecord(u32, Address),
+    DelistingProposalCounter,
+    DelistingProposal(u32),
+    DelistingVoteRecord(u32, Address),
 }
 
 #[contracttype]
@@ -114,6 +117,24 @@ pub enum ProposalStatus {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListingProposal {
+    pub proposal_id: u32,
+    pub token: Address,
+    pub proposer: Address,
+    pub rationale_hash: BytesN<32>,
+    pub voting_deadline_ledger: u32,
+    pub approve_weight: i128,
+    pub reject_weight: i128,
+    pub status: ProposalStatus,
+    pub enactment_deadline_ledger: u32,
+}
+
+/// Mirrors `ListingProposal` for the symmetric governance-gated delisting
+/// flow (propose → vote → finalise → enact), reusing the shared
+/// `ProposalStatus` enum and the same `QuorumBps` / `EnactmentDelayLedgers`
+/// governance parameters as listing proposals.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DelistingProposal {
     pub proposal_id: u32,
     pub token: Address,
     pub proposer: Address,
@@ -181,33 +202,43 @@ impl TokenWhitelistContract {
     pub fn remove_token(env: Env, admin: Address, token: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin);
+        if !Self::remove_token_from_whitelist(&env, &token) {
+            panic!("Token not whitelisted");
+        }
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        events::emit_token_delisted(&env, token, admin);
+    }
+
+    /// Removes `token` from the global whitelist and clears any active
+    /// suspension record for it. Returns `true` if the token was present.
+    /// Shared by the admin fast-path (`remove_token`) and the
+    /// governance-gated delisting flow (`enact_delisting`).
+    fn remove_token_from_whitelist(env: &Env, token: &Address) -> bool {
         let whitelist: Vec<Address> = env
             .storage().persistent()
             .get(&DataKey::WhitelistedTokens)
-            .unwrap_or_else(|| Vec::new(&env));
+            .unwrap_or_else(|| Vec::new(env));
         let mut found = false;
-        let mut new_whitelist = Vec::new(&env);
+        let mut new_whitelist = Vec::new(env);
         for existing_token in whitelist.iter() {
-            if existing_token == token {
+            if existing_token == *token {
                 found = true;
             } else {
                 new_whitelist.push_back(existing_token);
             }
         }
-        if !found {
-            panic!("Token not whitelisted");
+        if found {
+            env.storage().persistent().set(&DataKey::WhitelistedTokens, &new_whitelist);
+            env.storage().persistent().extend_ttl(
+                &DataKey::WhitelistedTokens,
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
+            if env.storage().persistent().has(&DataKey::SuspensionRecord(token.clone())) {
+                env.storage().persistent().remove(&DataKey::SuspensionRecord(token.clone()));
+            }
         }
-        env.storage().persistent().set(&DataKey::WhitelistedTokens, &new_whitelist);
-        env.storage().persistent().extend_ttl(
-            &DataKey::WhitelistedTokens,
-            PERSISTENT_LIFETIME_THRESHOLD,
-            PERSISTENT_BUMP_AMOUNT,
-        );
-        if env.storage().persistent().has(&DataKey::SuspensionRecord(token.clone())) {
-            env.storage().persistent().remove(&DataKey::SuspensionRecord(token.clone()));
-        }
-        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-        events::emit_token_delisted(&env, token, admin);
+        found
     }
 
     pub fn set_risk_tier(env: Env, admin: Address, tier_id: u32, name: soroban_sdk::String, max_single_tx_amount: i128, max_daily_volume: i128) {
@@ -918,6 +949,165 @@ impl TokenWhitelistContract {
 
     pub fn get_proposal_counter(env: Env) -> u32 {
         env.storage().instance().get(&DataKey::ProposalCounter).unwrap_or(0)
+    }
+
+    // ─── Governance-gated delisting (mirrors the listing flow above) ──────
+
+    pub fn propose_delisting(env: Env, proposer: Address, token: Address, rationale_hash: BytesN<32>) -> u32 {
+        proposer.require_auth();
+        if !Self::is_whitelisted(env.clone(), token.clone()) {
+            panic!("TokenNotWhitelisted");
+        }
+        let governance_token: Address = env
+            .storage().instance()
+            .get(&DataKey::GovernanceToken)
+            .expect("GovernanceTokenNotConfigured");
+        let min_stake: i128 = env
+            .storage().instance()
+            .get(&DataKey::MinProposalStake)
+            .unwrap_or(1);
+        let proposer_balance = token::Client::new(&env, &governance_token).balance(&proposer);
+        if proposer_balance < min_stake {
+            panic!("InsufficientProposerStake");
+        }
+        let voting_window: u32 = env
+            .storage().instance()
+            .get(&DataKey::VotingWindowLedgers)
+            .unwrap_or(DEFAULT_VOTING_WINDOW_LEDGERS);
+        let proposal_id: u32 = env
+            .storage().instance()
+            .get(&DataKey::DelistingProposalCounter)
+            .unwrap_or(0);
+        let proposal = DelistingProposal {
+            proposal_id,
+            token: token.clone(),
+            proposer: proposer.clone(),
+            rationale_hash,
+            voting_deadline_ledger: env.ledger().sequence() + voting_window,
+            approve_weight: 0,
+            reject_weight: 0,
+            status: ProposalStatus::Active,
+            enactment_deadline_ledger: 0,
+        };
+        env.storage().persistent().set(&DataKey::DelistingProposal(proposal_id), &proposal);
+        env.storage().persistent().extend_ttl(&DataKey::DelistingProposal(proposal_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        env.storage().instance().set(&DataKey::DelistingProposalCounter, &(proposal_id + 1));
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        events::emit_delisting_proposed(&env, proposal_id, token, proposer);
+        proposal_id
+    }
+
+    pub fn vote_delisting(env: Env, voter: Address, proposal_id: u32, approve: bool, weight: i128) {
+        voter.require_auth();
+        if weight <= 0 { panic!("weight must be positive"); }
+        let governance_token: Address = env
+            .storage().instance()
+            .get(&DataKey::GovernanceToken)
+            .expect("GovernanceTokenNotConfigured");
+        let voter_balance = token::Client::new(&env, &governance_token).balance(&voter);
+        if weight > voter_balance { panic!("VoteWeightExceedsBalance"); }
+        let mut proposal: DelistingProposal = env
+            .storage().persistent()
+            .get(&DataKey::DelistingProposal(proposal_id))
+            .expect("ProposalNotFound");
+        if proposal.status != ProposalStatus::Active { panic!("ProposalNotActive"); }
+        if env.ledger().sequence() > proposal.voting_deadline_ledger { panic!("VotingWindowClosed"); }
+        let vote_key = DataKey::DelistingVoteRecord(proposal_id, voter.clone());
+        if let Some((prev_approve, prev_weight)) = env
+            .storage().persistent()
+            .get::<DataKey, (bool, i128)>(&vote_key)
+        {
+            if prev_approve {
+                proposal.approve_weight = proposal.approve_weight.saturating_sub(prev_weight);
+            } else {
+                proposal.reject_weight = proposal.reject_weight.saturating_sub(prev_weight);
+            }
+        }
+        if approve {
+            proposal.approve_weight = proposal.approve_weight.saturating_add(weight);
+        } else {
+            proposal.reject_weight = proposal.reject_weight.saturating_add(weight);
+        }
+        env.storage().persistent().set(&vote_key, &(approve, weight));
+        env.storage().persistent().extend_ttl(&vote_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        env.storage().persistent().set(&DataKey::DelistingProposal(proposal_id), &proposal);
+        env.storage().persistent().extend_ttl(&DataKey::DelistingProposal(proposal_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        events::emit_delisting_vote_cast(&env, proposal_id, voter, approve, weight);
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+    }
+
+    pub fn finalise_delisting_proposal(env: Env, proposal_id: u32) {
+        let mut proposal: DelistingProposal = env
+            .storage().persistent()
+            .get(&DataKey::DelistingProposal(proposal_id))
+            .expect("ProposalNotFound");
+        if proposal.status != ProposalStatus::Active { panic!("ProposalNotActive"); }
+        if env.ledger().sequence() <= proposal.voting_deadline_ledger { panic!("VotingWindowNotClosed"); }
+        let total_weight = proposal.approve_weight + proposal.reject_weight;
+        let quorum_bps: u32 = env
+            .storage().instance()
+            .get(&DataKey::QuorumBps)
+            .unwrap_or(DEFAULT_QUORUM_BPS);
+        let quorum_met = if total_weight > 0 {
+            proposal.approve_weight * 10_000 >= quorum_bps as i128 * total_weight
+        } else {
+            false
+        };
+        if quorum_met {
+            let enactment_delay: u32 = env
+                .storage().instance()
+                .get(&DataKey::EnactmentDelayLedgers)
+                .unwrap_or(DEFAULT_ENACTMENT_DELAY_LEDGERS);
+            proposal.status = ProposalStatus::PendingEnactment;
+            proposal.enactment_deadline_ledger = env.ledger().sequence() + enactment_delay;
+        } else {
+            proposal.status = ProposalStatus::Failed;
+        }
+        env.storage().persistent().set(&DataKey::DelistingProposal(proposal_id), &proposal);
+        env.storage().persistent().extend_ttl(&DataKey::DelistingProposal(proposal_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+    }
+
+    pub fn enact_delisting(env: Env, proposal_id: u32) {
+        let mut proposal: DelistingProposal = env
+            .storage().persistent()
+            .get(&DataKey::DelistingProposal(proposal_id))
+            .expect("ProposalNotFound");
+        if proposal.status != ProposalStatus::PendingEnactment { panic!("ProposalNotPendingEnactment"); }
+        if env.ledger().sequence() <= proposal.enactment_deadline_ledger { panic!("EnactmentDelayNotElapsed"); }
+        Self::remove_token_from_whitelist(&env, &proposal.token);
+        proposal.status = ProposalStatus::Enacted;
+        env.storage().persistent().set(&DataKey::DelistingProposal(proposal_id), &proposal);
+        env.storage().persistent().extend_ttl(&DataKey::DelistingProposal(proposal_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        events::emit_delisting_enacted(&env, proposal_id, proposal.token);
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+    }
+
+    pub fn veto_delisting_proposal(env: Env, admin: Address, proposal_id: u32, reason_hash: BytesN<32>) {
+        admin.require_auth();
+        Self::require_admin(&env, &admin);
+        let mut proposal: DelistingProposal = env
+            .storage().persistent()
+            .get(&DataKey::DelistingProposal(proposal_id))
+            .expect("ProposalNotFound");
+        if proposal.status == ProposalStatus::Enacted || proposal.status == ProposalStatus::Vetoed {
+            panic!("ProposalAlreadyTerminal");
+        }
+        proposal.status = ProposalStatus::Vetoed;
+        env.storage().persistent().set(&DataKey::DelistingProposal(proposal_id), &proposal);
+        env.storage().persistent().extend_ttl(&DataKey::DelistingProposal(proposal_id), PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        events::emit_delisting_vetoed(&env, proposal_id, reason_hash);
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+    }
+
+    pub fn get_delisting_proposal(env: Env, proposal_id: u32) -> DelistingProposal {
+        env.storage().persistent()
+            .get(&DataKey::DelistingProposal(proposal_id))
+            .expect("ProposalNotFound")
+    }
+
+    pub fn get_delisting_proposal_counter(env: Env) -> u32 {
+        env.storage().instance().get(&DataKey::DelistingProposalCounter).unwrap_or(0)
     }
 }
 
