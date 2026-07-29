@@ -343,3 +343,41 @@ for it — a per-contract allowance can never be used to permanently bypass an
 incident-response suspension. Once the suspension is lifted or naturally
 expires, a previously-overridden contract-level entry grants access again
 without needing to be re-created.
+
+### Governance panic conditions (listing + delisting)
+
+The listing (`propose_token_listing` → `vote_listing` →
+`finalise_listing_proposal` → `enact_listing`) and delisting
+(`propose_delisting` → `vote_delisting` → `finalise_delisting_proposal` →
+`enact_delisting`) flows are symmetric (#3) and share the same
+`ProposalStatus` enum, `QuorumBps`/`EnactmentDelayLedgers` governance
+parameters, and panic conditions below. These use plain `panic!` with
+string literals rather than `#[contracterror]` (see the `Error` table
+above), so the codes below are the off-chain namespace assignments defined
+in `contracts/ahjoor-errors/src/lib.rs` for indexers/relays to decode them
+consistently with the rest of the protocol.
+
+| Code | Name | Contract | Description |
+| ---- | ---- | -------- | ----------- |
+| 5009 | ProposalNotFound | ahjoor-token-whitelist | Listing/delisting proposal ID does not exist. |
+| 5010 | ProposalNotActive | ahjoor-token-whitelist | Vote or finalise attempted on a proposal that is not `Active`. |
+| 5011 | VotingWindowClosed | ahjoor-token-whitelist | Vote cast after the proposal's `voting_deadline_ledger`. |
+| 5012 | VotingWindowNotClosed | ahjoor-token-whitelist | Finalise attempted before the voting deadline has passed. |
+| 5013 | VoteWeightExceedsBalance | ahjoor-token-whitelist | Vote weight exceeds the voter's governance token balance. |
+| 5014 | InsufficientProposerStake | ahjoor-token-whitelist | Proposer's governance token balance is below `MinProposalStake`. |
+| 5015 | GovernanceTokenNotConfigured | ahjoor-token-whitelist | Admin has not called `set_governance_token` yet. |
+| 5016 | ProposalNotPendingEnactment | ahjoor-token-whitelist | Enact attempted on a proposal that is not `PendingEnactment` (e.g. quorum not met, already enacted). |
+| 5017 | EnactmentDelayNotElapsed | ahjoor-token-whitelist | Enact attempted before `enactment_deadline_ledger` has passed. |
+| 5018 | ProposalAlreadyTerminal | ahjoor-token-whitelist | Veto attempted on a proposal already `Enacted` or `Vetoed`. |
+
+`propose_delisting` additionally requires the target token to currently be
+on the global whitelist — it panics with `"TokenNotWhitelisted"` (code
+5005) otherwise, since there is nothing to delist. Listing and delisting
+proposals use independent ID counters and storage namespaces
+(`ListingProposal`/`VoteRecord` vs. `DelistingProposal`/
+`DelistingVoteRecord`), so a listing proposal `0` and a delisting proposal
+`0` never collide. `enact_delisting` removes the token from the global
+whitelist and clears any active `SuspensionRecord` for it — the same
+cleanup `remove_token` performs — while `suspend_token_timed` remains
+available to admins as an instant, un-timelocked emergency fast path
+throughout.

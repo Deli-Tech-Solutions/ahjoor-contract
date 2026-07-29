@@ -250,3 +250,50 @@ pub fn emit_listing_enacted(e: &Env, proposal_id: u32, token: Address) {
 pub fn emit_listing_vetoed(e: &Env, proposal_id: u32, reason_hash: BytesN<32>) {
     ListingVetoed { proposal_id, reason_hash }.publish(e);
 }
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DelistingProposed {
+    pub proposal_id: u32,
+    pub token: Address,
+    pub proposer: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DelistingVoteCast {
+    pub proposal_id: u32,
+    pub voter: Address,
+    pub approve: bool,
+    pub weight: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DelistingEnacted {
+    pub proposal_id: u32,
+    pub token: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct DelistingVetoed {
+    pub proposal_id: u32,
+    pub reason_hash: BytesN<32>,
+}
+
+pub fn emit_delisting_proposed(e: &Env, proposal_id: u32, token: Address, proposer: Address) {
+    DelistingProposed { proposal_id, token, proposer }.publish(e);
+}
+
+pub fn emit_delisting_vote_cast(e: &Env, proposal_id: u32, voter: Address, approve: bool, weight: i128) {
+    DelistingVoteCast { proposal_id, voter, approve, weight }.publish(e);
+}
+
+pub fn emit_delisting_enacted(e: &Env, proposal_id: u32, token: Address) {
+    DelistingEnacted { proposal_id, token }.publish(e);
+}
+
+pub fn emit_delisting_vetoed(e: &Env, proposal_id: u32, reason_hash: BytesN<32>) {
+    DelistingVetoed { proposal_id, reason_hash }.publish(e);
+}

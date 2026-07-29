@@ -200,15 +200,33 @@ The `ahjoor-token-whitelist` contract (`contracts/ahjoor-token-whitelist`) restr
 
 ### Who controls it
 
-Only the contract **admin** can modify the whitelist. The admin is set once at deployment via `initialize(admin)`. All write operations require the admin address to authorize the transaction.
+The contract **admin** can modify the whitelist directly (`add_token`, `remove_token`) and can suspend a token instantly via `suspend_token_timed` — the fast-path emergency mechanism for incident response. The admin is set once at deployment via `initialize(admin)`. All admin write operations require the admin address to authorize the transaction.
+
+Listing and **delisting** tokens can additionally go through governance: a timelocked, quorum-gated proposal flow that any governance-token holder can initiate, so removing a token (which can freeze funds in every dependent contract) carries the same risk posture as adding one rather than being an instant, unchecked admin action.
 
 ### Key functions
 
 | Function | Description |
 | --- | --- |
-| `add_token(admin, token)` | Add a token contract address to the global whitelist. |
-| `remove_token(admin, token)` | Remove a token from the global whitelist. |
+| `add_token(admin, token)` | Add a token contract address to the global whitelist (admin fast path). |
+| `remove_token(admin, token)` | Remove a token from the global whitelist immediately (admin fast path). |
+| `suspend_token_timed(admin, token, duration, reason_hash)` | Instantly suspend a token for a fixed number of ledgers — the emergency circuit-breaker; no quorum or timelock. |
 | `is_whitelisted(token) → bool` | Return whether a token is on the global whitelist (read-only). |
+| `is_token_allowed(token) → bool` | Whitelist membership plus suspension status. |
+
+### Governance-gated listing & delisting
+
+Both flows share the same `ProposalStatus` lifecycle, `QuorumBps` quorum threshold, and `EnactmentDelayLedgers` timelock — delisting mirrors listing exactly, just in the opposite direction:
+
+| Step | Listing | Delisting |
+| --- | --- | --- |
+| 1. Propose | `propose_token_listing(proposer, token, rationale_hash) → id` | `propose_delisting(proposer, token, rationale_hash) → id` (token must currently be whitelisted) |
+| 2. Vote | `vote_listing(voter, id, approve, weight)` | `vote_delisting(voter, id, approve, weight)` |
+| 3. Finalise | `finalise_listing_proposal(id)` — marks `PendingEnactment` if quorum met, else `Failed` | `finalise_delisting_proposal(id)` — same quorum check |
+| 4. Enact | `enact_listing(id)` — adds the token once the timelock elapses | `enact_delisting(id)` — removes the token (and clears any active suspension) once the timelock elapses |
+| Veto | `veto_listing_proposal(admin, id, reason_hash)` | `veto_delisting_proposal(admin, id, reason_hash)` — admin can block enactment at any point before it executes |
+
+Proposing requires staking at least `MinProposalStake` governance tokens (`set_min_proposal_stake`); voting weight is capped by the voter's governance token balance. Listing and delisting proposals use independent ID counters, so a listing proposal `0` and a delisting proposal `0` are unrelated records. See `docs/errors.md` for the full list of governance panic conditions and their off-chain error codes.
 
 ### Example CLI call
 

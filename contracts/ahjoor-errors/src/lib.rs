@@ -234,6 +234,20 @@ pub mod whitelist {
     pub const QUOTA_EXCEEDED: u32             = 5006;
     pub const TOKEN_ALREADY_HAS_QUOTA: u32    = 5007;
     pub const TOKEN_HAS_NO_QUOTA: u32         = 5008;
+    // Governance (listing + delisting) uses panic! rather than a
+    // contracterror enum; these codes are the off-chain namespace
+    // assignments for both the listing flow and its symmetric delisting
+    // counterpart (#3), which share the same panic strings.
+    pub const PROPOSAL_NOT_FOUND: u32              = 5009;
+    pub const PROPOSAL_NOT_ACTIVE: u32             = 5010;
+    pub const VOTING_WINDOW_CLOSED: u32            = 5011;
+    pub const VOTING_WINDOW_NOT_CLOSED: u32        = 5012;
+    pub const VOTE_WEIGHT_EXCEEDS_BALANCE: u32     = 5013;
+    pub const INSUFFICIENT_PROPOSER_STAKE: u32     = 5014;
+    pub const GOVERNANCE_TOKEN_NOT_CONFIGURED: u32 = 5015;
+    pub const PROPOSAL_NOT_PENDING_ENACTMENT: u32  = 5016;
+    pub const ENACTMENT_DELAY_NOT_ELAPSED: u32     = 5017;
+    pub const PROPOSAL_ALREADY_TERMINAL: u32       = 5018;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +296,16 @@ pub static ALL_ERRORS: &[ErrorEntry] = &[
     ErrorEntry { code: whitelist::NOT_INITIALIZED, name: "NotInitialized", contract: "ahjoor-token-whitelist" },
     ErrorEntry { code: whitelist::TOKEN_ALREADY_WHITELISTED, name: "TokenAlreadyWhitelisted", contract: "ahjoor-token-whitelist" },
     ErrorEntry { code: whitelist::TOKEN_NOT_WHITELISTED, name: "TokenNotWhitelisted", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::PROPOSAL_NOT_FOUND, name: "ProposalNotFound", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::PROPOSAL_NOT_ACTIVE, name: "ProposalNotActive", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::VOTING_WINDOW_CLOSED, name: "VotingWindowClosed", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::VOTING_WINDOW_NOT_CLOSED, name: "VotingWindowNotClosed", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::VOTE_WEIGHT_EXCEEDS_BALANCE, name: "VoteWeightExceedsBalance", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::INSUFFICIENT_PROPOSER_STAKE, name: "InsufficientProposerStake", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::GOVERNANCE_TOKEN_NOT_CONFIGURED, name: "GovernanceTokenNotConfigured", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::PROPOSAL_NOT_PENDING_ENACTMENT, name: "ProposalNotPendingEnactment", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::ENACTMENT_DELAY_NOT_ELAPSED, name: "EnactmentDelayNotElapsed", contract: "ahjoor-token-whitelist" },
+    ErrorEntry { code: whitelist::PROPOSAL_ALREADY_TERMINAL, name: "ProposalAlreadyTerminal", contract: "ahjoor-token-whitelist" },
 ];
 
 #[cfg(test)]
