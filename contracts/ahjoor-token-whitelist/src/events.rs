@@ -191,6 +191,21 @@ pub fn emit_contract_token_allowlist_updated(
 
 #[contractevent]
 #[derive(Clone, Debug)]
+pub struct ContractAllowanceSuspended {
+    pub contract_id: Address,
+    pub token: Address,
+}
+
+pub fn emit_contract_allowance_suspended(
+    e: &Env,
+    contract_id: Address,
+    token: Address,
+) {
+    ContractAllowanceSuspended { contract_id, token }.publish(e);
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
 pub struct ListingProposed {
     pub proposal_id: u32,
     pub token: Address,

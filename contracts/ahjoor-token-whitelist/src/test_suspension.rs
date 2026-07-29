@@ -160,3 +160,27 @@ fn test_extend_nonexistent_suspension_panics() {
     client.add_token(&admin, &token);
     client.extend_token_suspension(&admin, &token, &50u32);
 }
+
+/// Regression test for the "per-contract allowlist bypasses global
+/// suspension" bug: a no-expiry `ContractTokenAllowlist` entry must never let
+/// a consumer contract keep using a token that has an active
+/// `suspend_token_timed` suspension.
+#[test]
+fn test_suspend_token_timed_always_wins_over_contract_allowlist() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = setup(&env);
+    let token = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+
+    client.add_token(&admin, &token);
+    client.set_contract_token(&admin, &contract_id, &token, &None);
+    assert!(client.is_token_allowed_for_contract(&contract_id, &token));
+
+    client.suspend_token_timed(&admin, &token, &1000u32, &reason(&env));
+
+    // Global check: suspended.
+    assert!(!client.is_token_allowed(&token));
+    // Per-contract check: suspension wins despite the no-expiry allowlist entry.
+    assert!(!client.is_token_allowed_for_contract(&contract_id, &token));
+}

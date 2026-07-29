@@ -10,7 +10,7 @@
 //! - Permanent (None expiry) vs time-bounded (Some(n)) approvals
 //! - get_contract_token_entry query returns the stored entry correctly
 
-use crate::{TokenWhitelistContract, TokenWhitelistContractClient};
+use crate::{ContractAllowlistEntry, TokenWhitelistContract, TokenWhitelistContractClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, Env,
@@ -324,7 +324,7 @@ fn test_get_contract_token_entry_permanent() {
     client.set_contract_token(&admin, &contract_id, &token, &None);
     assert_eq!(
         client.get_contract_token_entry(&contract_id, &token),
-        Some(None)
+        Some(ContractAllowlistEntry { expiry_ledger: None })
     );
 }
 
@@ -339,7 +339,7 @@ fn test_get_contract_token_entry_time_bounded() {
     client.set_contract_token(&admin, &contract_id, &token, &Some(expiry));
     assert_eq!(
         client.get_contract_token_entry(&contract_id, &token),
-        Some(Some(expiry))
+        Some(ContractAllowlistEntry { expiry_ledger: Some(expiry) })
     );
 }
 
@@ -399,38 +399,132 @@ fn test_contracts_can_have_different_expiries_for_same_token() {
 
 // ─── Interaction with global suspension ──────────────────────────────────────
 
-/// A contract-level entry does NOT bypass a global suspension: the fallback
-/// path honours suspensions, but a contract-level entry bypasses the global
-/// check entirely, so a suspended token with a contract-level entry is still
-/// reachable *only* through the contract-level path, not through global check.
-///
-/// Specifically: `is_token_allowed_for_contract` returning true for a contract
-/// entry means the *contract* approved it independently of global status.
-/// The global `is_token_allowed` still returns false while suspended.
+/// A per-contract allowlist entry must NEVER bypass an active global
+/// suspension. Even a permanent (no-expiry) contract-level grant is
+/// overridden while `suspend_token_timed` has an active record for the
+/// token — otherwise an admin could never incident-respond to a token that
+/// was once granted a no-expiry allowance for a specific consumer contract.
+/// See issue: "Per-contract token allowlist can permanently bypass a global
+/// token suspension".
 #[test]
-fn test_contract_entry_allows_even_if_globally_suspended() {
+fn test_active_suspension_overrides_permanent_contract_entry() {
     let (env, admin, client) = setup();
     let contract_id = Address::generate(&env);
     let token = Address::generate(&env);
 
-    // Add to global and suspend it
+    // Grant a permanent, no-expiry contract-level allowance first.
     client.add_token(&admin, &token);
+    client.set_contract_token(&admin, &contract_id, &token, &None);
+    assert!(client.is_token_allowed_for_contract(&contract_id, &token));
+
+    // Now suspend the token globally.
     client.suspend_token_timed(
         &admin,
         &token,
         &1000u32,
         &soroban_sdk::BytesN::from_array(&env, &[1u8; 32]),
     );
-    // Globally suspended → is_token_allowed returns false
     assert!(!client.is_token_allowed(&token));
 
-    // Add a contract-level entry
+    // The permanent contract-level entry must no longer grant access while
+    // the suspension is active.
+    assert!(!client.is_token_allowed_for_contract(&contract_id, &token));
+}
+
+/// Same as above but for a token that is only allowlisted per-contract (not
+/// on the global whitelist at all): suspension still wins.
+#[test]
+fn test_active_suspension_overrides_contract_entry_for_non_globally_listed_token() {
+    let (env, admin, client) = setup();
+    let contract_id = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    // Token is on the global whitelist only long enough to be suspended,
+    // then removed — the suspension record still exists independently.
+    client.add_token(&admin, &token);
+    client.suspend_token_timed(
+        &admin,
+        &token,
+        &1000u32,
+        &soroban_sdk::BytesN::from_array(&env, &[3u8; 32]),
+    );
+
+    // Grant a permanent contract-level allowance while the token is suspended.
     client.set_contract_token(&admin, &contract_id, &token, &None);
 
-    // Contract-level entry takes precedence; returns true without touching global
+    // Suspension still wins even though the contract-level entry was created
+    // after (and is unaware of) the suspension.
+    assert!(!client.is_token_allowed_for_contract(&contract_id, &token));
+}
+
+/// A time-bounded contract-level entry is also overridden by an active
+/// suspension while the entry has not yet expired.
+#[test]
+fn test_active_suspension_overrides_time_bounded_contract_entry() {
+    let (env, admin, client) = setup();
+    let contract_id = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    client.add_token(&admin, &token);
+    let expiry = env.ledger().sequence() + 1000;
+    client.set_contract_token(&admin, &contract_id, &token, &Some(expiry));
     assert!(client.is_token_allowed_for_contract(&contract_id, &token));
-    // Global check is unaffected (still suspended)
-    assert!(!client.is_token_allowed(&token));
+
+    client.suspend_token_timed(
+        &admin,
+        &token,
+        &500u32,
+        &soroban_sdk::BytesN::from_array(&env, &[4u8; 32]),
+    );
+
+    assert!(!client.is_token_allowed_for_contract(&contract_id, &token));
+}
+
+/// Once a suspension is lifted, a previously-overridden permanent
+/// contract-level entry grants access again.
+#[test]
+fn test_contract_entry_restored_after_suspension_lifted() {
+    let (env, admin, client) = setup();
+    let contract_id = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    client.add_token(&admin, &token);
+    client.set_contract_token(&admin, &contract_id, &token, &None);
+    client.suspend_token_timed(
+        &admin,
+        &token,
+        &1000u32,
+        &soroban_sdk::BytesN::from_array(&env, &[5u8; 32]),
+    );
+    assert!(!client.is_token_allowed_for_contract(&contract_id, &token));
+
+    client.lift_token_suspension(&admin, &token);
+
+    assert!(client.is_token_allowed_for_contract(&contract_id, &token));
+}
+
+/// Once a timed suspension naturally expires, a previously-overridden
+/// permanent contract-level entry grants access again without needing to be
+/// re-created.
+#[test]
+fn test_contract_entry_restored_after_suspension_expires() {
+    let (env, admin, client) = setup();
+    let contract_id = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    client.add_token(&admin, &token);
+    client.set_contract_token(&admin, &contract_id, &token, &None);
+    client.suspend_token_timed(
+        &admin,
+        &token,
+        &5u32,
+        &soroban_sdk::BytesN::from_array(&env, &[6u8; 32]),
+    );
+    assert!(!client.is_token_allowed_for_contract(&contract_id, &token));
+
+    advance_ledger(&env, 10);
+
+    assert!(client.is_token_allowed_for_contract(&contract_id, &token));
 }
 
 /// When the contract-level entry is absent, a suspended global token is denied

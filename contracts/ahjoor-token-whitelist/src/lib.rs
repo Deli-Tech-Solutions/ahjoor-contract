@@ -56,6 +56,17 @@ pub struct TierLimits {
     pub max_daily_volume: i128,
 }
 
+/// Wraps the per-contract allowlist expiry so that a permanent (`None`)
+/// entry can be distinguished from "no entry at all" when returned from a
+/// contract call. A bare `Option<Option<u32>>` cannot make that distinction:
+/// Soroban's `Val` encoding collapses `Some(None)` and `None` to the same
+/// `Void` value across a call boundary.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractAllowlistEntry {
+    pub expiry_ledger: Option<u32>,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenMetadata {
@@ -548,24 +559,49 @@ impl TokenWhitelistContract {
         events::emit_contract_token_allowlist_updated(&env, contract_id, token, false, None);
     }
 
-    pub fn get_contract_token_entry(env: Env, contract_id: Address, token: Address) -> Option<Option<u32>> {
+    pub fn get_contract_token_entry(
+        env: Env,
+        contract_id: Address,
+        token: Address,
+    ) -> Option<ContractAllowlistEntry> {
         let key = DataKey::ContractTokenAllowlist(contract_id, token);
-        env.storage().persistent().get::<_, Option<u32>>(&key)
+        if !env.storage().persistent().has(&key) {
+            return None;
+        }
+        let expiry_ledger: Option<u32> = env.storage().persistent().get(&key).unwrap_or(None);
+        Some(ContractAllowlistEntry { expiry_ledger })
     }
 
     pub fn is_token_allowed_for_contract(env: Env, contract_id: Address, token: Address) -> bool {
-        let key = DataKey::ContractTokenAllowlist(contract_id, token.clone());
-        if let Some(expiry) = env.storage().persistent().get::<_, Option<u32>>(&key) {
-            match expiry {
-                None => return true,
-                Some(exp) => {
-                    if env.ledger().sequence() < exp {
-                        return true;
-                    }
-                }
+        let key = DataKey::ContractTokenAllowlist(contract_id.clone(), token.clone());
+        let contract_entry_grants = match env.storage().persistent().get::<_, Option<u32>>(&key) {
+            Some(None) => true,
+            Some(Some(exp)) => env.ledger().sequence() < exp,
+            None => false,
+        };
+
+        if contract_entry_grants {
+            if Self::is_actively_suspended(&env, &token) {
+                events::emit_contract_allowance_suspended(&env, contract_id, token);
+                return false;
             }
+            return true;
         }
+
         Self::is_token_allowed(env, token)
+    }
+
+    /// Read-only check for whether a token currently has an active (non-expired)
+    /// suspension record. Unlike `is_token_allowed`, this never mutates storage
+    /// or auto-reinstates an expired suspension.
+    fn is_actively_suspended(env: &Env, token: &Address) -> bool {
+        let maybe_record: Option<SuspensionRecord> = env
+            .storage().persistent()
+            .get(&DataKey::SuspensionRecord(token.clone()));
+        match maybe_record {
+            Some(record) => env.ledger().sequence() < record.expiry_ledger,
+            None => false,
+        }
     }
 
     pub fn set_token_quota(
@@ -884,3 +920,15 @@ impl TokenWhitelistContract {
         env.storage().instance().get(&DataKey::ProposalCounter).unwrap_or(0)
     }
 }
+
+#[cfg(test)]
+mod test;
+
+#[cfg(test)]
+mod test_suspension;
+
+#[cfg(test)]
+mod test_governance;
+
+#[cfg(test)]
+mod test_contract_allowlist;
