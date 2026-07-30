@@ -75,6 +75,20 @@ stellar contract build
 make test
 ```
 
+The workspace contains an `integration-tests` crate that deploys multiple contracts together
+and drives realistic cross-contract flows:
+
+| Test file | Contracts involved | What it covers |
+|-----------|-------------------|----------------|
+| `rosca_payout_flow.rs` | `ahjoor-rosca` | ROSCA round payout and defaulter handling |
+| `cross_contract_refund_flow.rs` | `ahjoor-token-whitelist` + `ahjoor-escrow` + `ahjoor-refund` | Whitelist a token → fund escrow → dispute → register cross-contract refund → verify record |
+| `whitelist_suspension_flow.rs` | `ahjoor-token-whitelist` + `ahjoor-escrow` + `ahjoor-rosca` | Suspend a token mid-flow and assert every dependent contract rejects further operations |
+
+```bash
+# Run only integration tests
+cargo test -p integration-tests
+```
+
 ### Coverage
 
 ```bash
