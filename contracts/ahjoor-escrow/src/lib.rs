@@ -125,6 +125,22 @@ pub struct AutoRenewConfig {
     pub renewal_interval_ledgers: u32,
 }
 
+/// Controls what happens to a ConditionalRelease condition when an escrow auto-renews.
+///
+/// Waiver signatures (BuyerWaiverSigned / SellerWaiverSigned) are ALWAYS reset on
+/// renewal regardless of this setting, because consent given in a prior term must
+/// not carry forward into a new term.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenewalConditionPolicy {
+    /// Default: the ConditionalRelease condition is cleared for the new term.
+    /// The new term starts with no condition; one must be re-established if desired.
+    Reset = 0,
+    /// The ConditionalRelease condition is copied to the new term, but all waiver
+    /// signatures are reset so the condition must be re-satisfied or re-waived.
+    CarryOver = 1,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EscrowCreateRequest {
@@ -148,6 +164,7 @@ pub struct EscrowCreateRequest {
     /// Optional auto-renewal configuration for recurring service agreements.
     pub auto_renew_max_renewals: Option<u32>,
     pub auto_renew_interval_ledgers: Option<u32>,
+    pub renewal_condition_policy: RenewalConditionPolicy,
 }
 
 #[contracttype]
@@ -214,6 +231,8 @@ pub struct EscrowExtensions {
     pub auto_renew_interval_ledgers: Option<u32>,
     /// Number of renewal cycles completed so far (incremented on each successful renewal).
     pub renewals_completed: u32,
+    /// Policy for ConditionalRelease state on renewal (Reset = clear, CarryOver = copy without waivers).
+    pub renewal_condition_policy: RenewalConditionPolicy,
 }
 
 #[contracttype]
@@ -286,6 +305,8 @@ pub struct EscrowTemplateConfig {
     pub arbiter: Address,
     pub token: Address,
     pub deadline_duration: u64, // seconds from escrow creation
+    /// Policy applied to ConditionalRelease state when a template-derived escrow auto-renews.
+    pub renewal_condition_policy: RenewalConditionPolicy,
 }
 
 #[contracttype]
@@ -489,6 +510,9 @@ pub enum DataKey2 {
     InspectorRulingAppealed(u32),
     /// #376: ordered milestone schedule for a milestone-gated bounty (escrow_id → Vec<BountyMilestone>)
     BountyMilestones(u32),
+    /// Auto-renewal chain root: any renewal escrow → the original (first) escrow ID in its chain.
+    /// Absent for the root escrow itself.  Used so RenewalHistory accumulates on the root.
+    RenewalChainRoot(u32),
     /// #421: buyer list for a multi-buyer escrow (escrow_id → Vec<Address>)
     MultiBuyerList(u32),
     /// #421: buyer contribution shares (escrow_id → Map<Address, i128>)
@@ -780,6 +804,7 @@ impl AhjoorEscrowContract {
             auto_renew_max_renewals: None,
 
             auto_renew_interval_ledgers: None,
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
 
         Self::create_escrow_core(&env, &buyer, request)
@@ -825,6 +850,7 @@ impl AhjoorEscrowContract {
             auto_renew_max_renewals: None,
 
             auto_renew_interval_ledgers: None,
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
 
         Self::create_escrow_core(&env, &buyer, request)
@@ -875,6 +901,7 @@ impl AhjoorEscrowContract {
             dispute_default_winner: None,
             auto_renew_max_renewals: Some(auto_renew_config.max_renewals),
             auto_renew_interval_ledgers: Some(auto_renew_config.renewal_interval_ledgers),
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
 
         Self::create_escrow_core(&env, &buyer, request)
@@ -971,6 +998,7 @@ impl AhjoorEscrowContract {
                 auto_renew_max_renewals: None,
                 auto_renew_interval_ledgers: None,
                 renewals_completed: 0,
+                renewal_condition_policy: RenewalConditionPolicy::Reset,
             },
             top_up_history: Vec::new(&env),
             top_up_acknowledged: true,
@@ -1095,6 +1123,7 @@ impl AhjoorEscrowContract {
                     auto_renew_max_renewals: None,
 
                     auto_renew_interval_ledgers: None,
+                    renewal_condition_policy: RenewalConditionPolicy::Reset,
                 },
             );
 
@@ -1434,6 +1463,7 @@ impl AhjoorEscrowContract {
             dispute_default_winner,
             auto_renew_max_renewals,
             auto_renew_interval_ledgers,
+            renewal_condition_policy,
         } = request;
 
         if amount <= 0 {
@@ -1556,6 +1586,7 @@ impl AhjoorEscrowContract {
                 auto_renew_max_renewals,
                 auto_renew_interval_ledgers,
                 renewals_completed: 0,
+                renewal_condition_policy,
             },
             top_up_history: Vec::new(env),
             top_up_acknowledged: true,
@@ -1930,6 +1961,44 @@ impl AhjoorEscrowContract {
         );
 
         Self::release_escrow(env, caller, escrow_id);
+    }
+
+    /// Set a ConditionalRelease condition on an active escrow (#318).
+    /// Only the buyer may call this. The condition is checked via `trigger_conditional_release`.
+    pub fn set_conditional_release(
+        env: Env,
+        buyer: Address,
+        escrow_id: u32,
+        condition: ConditionalRelease,
+    ) {
+        Self::require_not_paused(&env);
+        buyer.require_auth();
+
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(escrow_id))
+            .expect("Escrow not found");
+
+        if buyer != escrow.buyer {
+            panic!("Only buyer can set conditional release");
+        }
+        if escrow.status != EscrowStatus::Active {
+            panic!("Escrow must be Active");
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey2::ConditionalReleaseCondition(escrow_id), &condition);
+        env.storage().persistent().extend_ttl(
+            &DataKey2::ConditionalReleaseCondition(escrow_id),
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     /// Update the inspector assigned to an escrow. Requires mutual consent (#316).
@@ -2326,6 +2395,7 @@ impl AhjoorEscrowContract {
             auto_renew_max_renewals: None,
 
             auto_renew_interval_ledgers: None,
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
         let escrow_id = Self::create_escrow_core(&env, &buyer, request);
 
@@ -4580,6 +4650,7 @@ impl AhjoorEscrowContract {
             auto_renew_max_renewals: None,
 
             auto_renew_interval_ledgers: None,
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
         let escrow_id = Self::create_escrow_core(&env, &buyer, request);
         let lock_data = TimeLockData { unlock_at, beneficiary: beneficiary.clone(), claimed: false };
@@ -4868,6 +4939,7 @@ impl AhjoorEscrowContract {
 
                 auto_renew_interval_ledgers: None,
                 renewals_completed: 0,
+                renewal_condition_policy: template.config.renewal_condition_policy,
             },
             top_up_history: Vec::new(&env),
             top_up_acknowledged: true,
@@ -5069,6 +5141,7 @@ impl AhjoorEscrowContract {
 
                 auto_renew_interval_ledgers: None,
                 renewals_completed: 0,
+                renewal_condition_policy: RenewalConditionPolicy::Reset,
             },
             top_up_history: Vec::new(&env),
             top_up_acknowledged: true,
@@ -5639,6 +5712,7 @@ impl AhjoorEscrowContract {
 
                 auto_renew_interval_ledgers: None,
                 renewals_completed: 0,
+                renewal_condition_policy: RenewalConditionPolicy::Reset,
             },
             top_up_history: Vec::new(&env),
             top_up_acknowledged: false,
@@ -6117,6 +6191,7 @@ impl AhjoorEscrowContract {
 
                 auto_renew_interval_ledgers: None,
                 renewals_completed: 0,
+                renewal_condition_policy: RenewalConditionPolicy::Reset,
             },
             top_up_history: Vec::new(&env),
             top_up_acknowledged: false,
@@ -6839,6 +6914,7 @@ impl AhjoorEscrowContract {
             auto_renew_max_renewals: None,
 
             auto_renew_interval_ledgers: None,
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
 
         let escrow_id = Self::create_escrow_core(&env, &buyer, request);
@@ -7486,6 +7562,7 @@ impl AhjoorEscrowContract {
                     auto_renew_max_renewals: Some(max_renewals),
                     auto_renew_interval_ledgers: source.extensions.auto_renew_interval_ledgers,
                     renewals_completed: renewal_index,
+                    renewal_condition_policy: source.extensions.renewal_condition_policy,
                 },
                 top_up_history: Vec::new(env),
                 top_up_acknowledged: false,
@@ -7512,10 +7589,15 @@ impl AhjoorEscrowContract {
                 );
             }
 
-            // Append new_escrow_id to the renewal history of the original escrow
-            // The "original" escrow is tracked by walking back: we store history keyed
-            // by old_escrow_id so callers can call get_renewal_history(original_id).
-            let history_key = DataKey2::RenewalHistory(old_escrow_id);
+            // Append new_escrow_id to the renewal history of the chain root.
+            // The root is the first escrow in the chain; all successors store a pointer back
+            // to it so that get_renewal_history(original_id) always returns the full chain.
+            let root_id: u32 = env
+                .storage()
+                .persistent()
+                .get(&DataKey2::RenewalChainRoot(old_escrow_id))
+                .unwrap_or(old_escrow_id);
+            let history_key = DataKey2::RenewalHistory(root_id);
             let mut history: Vec<u32> = env
                 .storage()
                 .persistent()
@@ -7527,6 +7609,23 @@ impl AhjoorEscrowContract {
                 &history_key,
                 PERSISTENT_LIFETIME_THRESHOLD,
                 PERSISTENT_BUMP_AMOUNT,
+            );
+            // Record the chain root for the newly created escrow.
+            env.storage()
+                .persistent()
+                .set(&DataKey2::RenewalChainRoot(new_escrow_id), &root_id);
+            env.storage().persistent().extend_ttl(
+                &DataKey2::RenewalChainRoot(new_escrow_id),
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
+
+            // ── Handle ConditionalRelease state on renewal ────────────────────
+            Self::handle_conditional_release_on_renewal(
+                env,
+                old_escrow_id,
+                new_escrow_id,
+                source.extensions.renewal_condition_policy,
             );
 
             events::emit_escrow_auto_renewed_v2(env, old_escrow_id, new_escrow_id, renewal_index);
@@ -7608,6 +7707,7 @@ impl AhjoorEscrowContract {
 
                 auto_renew_interval_ledgers: None,
                 renewals_completed: 0,
+                renewal_condition_policy: source.extensions.renewal_condition_policy,
             },
             top_up_history: Vec::new(&env),
             top_up_acknowledged: false,
@@ -7644,7 +7744,67 @@ impl AhjoorEscrowContract {
             PERSISTENT_BUMP_AMOUNT,
         );
 
+        // ── Handle ConditionalRelease state on renewal ────────────────────────
+        Self::handle_conditional_release_on_renewal(
+            env,
+            old_escrow_id,
+            new_escrow_id,
+            source.extensions.renewal_condition_policy,
+        );
+
         events::emit_escrow_auto_renewed(env, old_escrow_id, new_escrow_id, renewals_remaining);
+    }
+
+    /// Propagate (or clear) a ConditionalRelease condition and its waiver state across
+    /// a renewal boundary.  Waiver signatures are ALWAYS dropped so that consent given
+    /// in the prior term cannot short-circuit the new term's condition check.
+    fn handle_conditional_release_on_renewal(
+        env: &Env,
+        old_escrow_id: u32,
+        new_escrow_id: u32,
+        policy: RenewalConditionPolicy,
+    ) {
+        // Always clear waiver signatures — they must not carry over regardless of policy.
+        env.storage()
+            .persistent()
+            .remove(&DataKey2::BuyerWaiverSigned(old_escrow_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey2::SellerWaiverSigned(old_escrow_id));
+
+        let maybe_condition: Option<ConditionalRelease> = env
+            .storage()
+            .persistent()
+            .get(&DataKey2::ConditionalReleaseCondition(old_escrow_id));
+
+        match maybe_condition {
+            None => {} // No condition was set; nothing to do.
+            Some(condition) => match policy {
+                RenewalConditionPolicy::Reset => {
+                    // Clear the condition — new term starts fresh.
+                    events::emit_renewal_condition_reset(env, old_escrow_id, new_escrow_id);
+                }
+                RenewalConditionPolicy::CarryOver => {
+                    // Copy condition to the new escrow without any waiver state.
+                    env.storage()
+                        .persistent()
+                        .set(&DataKey2::ConditionalReleaseCondition(new_escrow_id), &condition);
+                    env.storage().persistent().extend_ttl(
+                        &DataKey2::ConditionalReleaseCondition(new_escrow_id),
+                        PERSISTENT_LIFETIME_THRESHOLD,
+                        PERSISTENT_BUMP_AMOUNT,
+                    );
+                    events::emit_renewal_condition_carried_over(
+                        env,
+                        old_escrow_id,
+                        new_escrow_id,
+                        condition.oracle_contract,
+                        condition.condition_method,
+                        condition.expected_value,
+                    );
+                }
+            },
+        }
     }
 
     /// Update the LastBuyerAction timestamp for inactivity tracking (#150).
@@ -7753,6 +7913,7 @@ impl AhjoorEscrowContract {
                 auto_renew_max_renewals: None,
 
                 auto_renew_interval_ledgers: None,
+                renewal_condition_policy: RenewalConditionPolicy::Reset,
             },
         );
         if required_collateral_bps > 0 {
@@ -8428,6 +8589,7 @@ impl AhjoorEscrowContract {
             auto_renew_max_renewals: None,
 
             auto_renew_interval_ledgers: None,
+            renewal_condition_policy: RenewalConditionPolicy::Reset,
         };
         let escrow_id = Self::create_escrow_core(&env, &buyer, request);
 
@@ -8711,3 +8873,5 @@ mod test_bounty_board;
 mod test_bounty_milestone;
 #[cfg(test)]
 mod test_multi_buyer;
+#[cfg(test)]
+mod test_auto_renewal;

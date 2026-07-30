@@ -756,6 +756,49 @@ pub fn emit_auto_renewal_cancelled(e: &Env, escrow_id: u32) {
     AutoRenewalCancelled { escrow_id }.publish(e);
 }
 
+/// Event: ConditionalRelease condition was cleared (not carried over) on auto-renewal.
+/// Emitted under RenewalConditionPolicy::Reset.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct RenewalConditionReset {
+    pub old_escrow_id: u32,
+    pub new_escrow_id: u32,
+}
+
+/// Event: ConditionalRelease condition was copied to the renewed escrow without waivers.
+/// Emitted under RenewalConditionPolicy::CarryOver.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct RenewalConditionCarriedOver {
+    pub old_escrow_id: u32,
+    pub new_escrow_id: u32,
+    pub oracle_contract: Address,
+    pub condition_method: soroban_sdk::Symbol,
+    pub expected_value: i128,
+}
+
+pub fn emit_renewal_condition_reset(e: &Env, old_escrow_id: u32, new_escrow_id: u32) {
+    RenewalConditionReset { old_escrow_id, new_escrow_id }.publish(e);
+}
+
+pub fn emit_renewal_condition_carried_over(
+    e: &Env,
+    old_escrow_id: u32,
+    new_escrow_id: u32,
+    oracle_contract: Address,
+    condition_method: soroban_sdk::Symbol,
+    expected_value: i128,
+) {
+    RenewalConditionCarriedOver {
+        old_escrow_id,
+        new_escrow_id,
+        oracle_contract,
+        condition_method,
+        expected_value,
+    }
+    .publish(e);
+}
+
 pub fn emit_buyer_role_transferred(
     e: &Env,
     escrow_id: u32,

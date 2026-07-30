@@ -108,6 +108,7 @@ fn make_request(env: &soroban_sdk::Env, seller: &Address, arbiter: &Address, tok
         auto_renew_max_renewals: None,
 
         auto_renew_interval_ledgers: None,
+        renewal_condition_policy: crate::RenewalConditionPolicy::Reset,
     }
 }
 
