@@ -3191,7 +3191,7 @@ fn test_arbiter_fee_deducted_from_loser_seller_wins() {
         dispute_default_winner: None,
         auto_renew_max_renewals: None,
 
-        auto_renew_interval_ledgers: None,    };
+        auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     s.client.dispute_escrow(&buyer, &escrow_id, &String::from_str(&s.env, "dispute"), &1000);
@@ -3234,7 +3234,7 @@ fn test_arbiter_fee_deducted_from_loser_buyer_wins() {
         dispute_default_winner: None,
         auto_renew_max_renewals: None,
 
-        auto_renew_interval_ledgers: None,    };
+        auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     s.client.dispute_escrow(&buyer, &escrow_id, &String::from_str(&s.env, "dispute"), &1000);
@@ -3277,7 +3277,7 @@ fn test_arbiter_fee_zero_is_valid() {
         dispute_default_winner: None,
         auto_renew_max_renewals: None,
 
-        auto_renew_interval_ledgers: None,    };
+        auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     s.client.dispute_escrow(&buyer, &escrow_id, &String::from_str(&s.env, "dispute"), &1000);
@@ -3317,7 +3317,7 @@ fn test_arbiter_fee_cap_enforced_at_creation() {
         dispute_default_winner: None,
         auto_renew_max_renewals: None,
 
-        auto_renew_interval_ledgers: None,    };
+        auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let result = s.client.try_create_escrow_v2(&buyer, &request);
     assert!(result.is_err());
 }
@@ -3378,7 +3378,7 @@ fn test_arbiter_fee_emits_event() {
         dispute_default_winner: None,
         auto_renew_max_renewals: None,
 
-        auto_renew_interval_ledgers: None,    };
+        auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     s.client.dispute_escrow(&buyer, &escrow_id, &String::from_str(&s.env, "dispute"), &1000);
@@ -3427,7 +3427,7 @@ fn test_release_before_min_lock_until_panics() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Still before lock_until
@@ -3469,7 +3469,7 @@ fn test_release_at_min_lock_until_succeeds() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Exactly at lock_until
@@ -3514,7 +3514,7 @@ fn test_release_after_min_lock_until_succeeds() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     s.env.ledger().set_timestamp(2500);
@@ -3556,7 +3556,7 @@ fn test_dispute_not_blocked_by_lock() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Still locked, but dispute should work
@@ -3600,7 +3600,7 @@ fn test_lock_and_deadline_independently_configurable() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     let escrow = s.client.get_escrow(&escrow_id);
@@ -3641,7 +3641,7 @@ fn test_time_locked_escrow_emits_event() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     s.client.create_escrow_v2(&buyer, &request);
 
     let events = s.env.events().all();
@@ -3681,7 +3681,7 @@ fn test_deadline_must_be_after_lock_until() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let result = s.client.try_create_escrow_v2(&buyer, &request);
     assert!(result.is_err());
 }
@@ -3809,7 +3809,7 @@ fn test_oracle_release_triggers_when_price_below_threshold() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Price = 400 <= 500 → condition met
@@ -3853,7 +3853,7 @@ fn test_oracle_release_does_not_trigger_when_price_above_threshold() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Price = 600 > 500 → condition NOT met
@@ -3897,7 +3897,7 @@ fn test_oracle_release_triggers_when_price_at_threshold() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Price exactly at threshold = 500 → condition met (<=)
@@ -3940,7 +3940,7 @@ fn test_oracle_release_greater_or_equal_condition() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Price = 1200 >= 1000 → condition met
@@ -3983,7 +3983,7 @@ fn test_oracle_stale_price_blocks_release() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Set price at ts=0, advance ledger to ts=500 → age=500 > max_oracle_age(300)
@@ -4029,7 +4029,7 @@ fn test_manual_release_works_regardless_of_oracle_condition() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     // Manual release by buyer still works regardless of oracle
@@ -4072,7 +4072,7 @@ fn test_oracle_release_emits_event() {
             dispute_default_winner: None,
             auto_renew_max_renewals: None,
 
-            auto_renew_interval_ledgers: None,    };
+            auto_renew_interval_ledgers: None,    renewal_condition_policy: RenewalConditionPolicy::Reset,    };
     let escrow_id = s.client.create_escrow_v2(&buyer, &request);
 
     set_escrow_oracle_price(&s, 300, 200);

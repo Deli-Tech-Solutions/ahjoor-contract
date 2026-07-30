@@ -392,6 +392,172 @@ fn test_cancel_auto_renewal_no_config_panics() {
     s.client.cancel_auto_renewal(&buyer, &escrow_id);
 }
 
+// ---------------------------------------------------------------------------
+//  Conditional-release / renewal interaction regression tests
+// ---------------------------------------------------------------------------
+
+/// Default (Reset) policy: ConditionalRelease condition is NOT carried to the renewed escrow.
+/// The new term starts without any condition, so trigger_conditional_release would panic.
+#[test]
+fn test_renewal_reset_policy_clears_condition() {
+    let s = setup();
+    let buyer = Address::generate(&s.env);
+    let seller = Address::generate(&s.env);
+    let arbiter = Address::generate(&s.env);
+    s.token_admin_client.mint(&buyer, &1_000);
+
+    s.env.ledger().set_timestamp(1_000);
+    let deadline = s.env.ledger().timestamp() + 500;
+
+    let cfg = AutoRenewConfig {
+        max_renewals: 2,
+        renewal_interval_ledgers: 100,
+    };
+    let escrow_id = s.client.create_escrow_with_auto_renew(
+        &buyer, &seller, &arbiter, &200, &s.token_addr, &deadline, &None, &cfg,
+    );
+
+    // Default policy is Reset; set a ConditionalRelease condition on the original escrow.
+    let condition = ConditionalRelease {
+        oracle_contract: Address::generate(&s.env),
+        condition_method: soroban_sdk::symbol_short!("price"),
+        expected_value: 100,
+    };
+    s.client.set_conditional_release(&buyer, &escrow_id, &condition);
+
+    approve_allowance(&s, &buyer, 200 * 2);
+
+    // Release the original escrow — triggers renewal → escrow 1 is created.
+    s.client.release_escrow(&buyer, &escrow_id);
+
+    let renewed = s.client.get_escrow(&1u32);
+    assert_eq!(renewed.status, EscrowStatus::Active);
+
+    // The renewed escrow (escrow 1) must NOT have the condition (Reset policy).
+    // trigger_conditional_release on escrow 1 should panic with "No conditional release set".
+    let result = s.client.try_trigger_conditional_release(&buyer, &1u32);
+    assert!(result.is_err(), "Condition must be cleared on renewal with Reset policy");
+
+    // Policy on renewed escrow is still Reset (inherited from source).
+    assert_eq!(
+        renewed.extensions.renewal_condition_policy,
+        RenewalConditionPolicy::Reset,
+    );
+}
+
+/// CarryOver policy: ConditionalRelease condition IS copied to the renewed escrow,
+/// but no waiver signatures are carried over so the condition must be re-satisfied.
+#[test]
+fn test_renewal_carryover_policy_copies_condition_without_waivers() {
+    let s = setup();
+    let buyer = Address::generate(&s.env);
+    let seller = Address::generate(&s.env);
+    let arbiter = Address::generate(&s.env);
+    s.token_admin_client.mint(&buyer, &1_000);
+
+    s.env.ledger().set_timestamp(1_000);
+    let deadline = s.env.ledger().timestamp() + 500;
+
+    // Use create_escrow_v2 with EscrowCreateRequest to set CarryOver policy + auto-renew config.
+    let request = EscrowCreateRequest {
+        seller: seller.clone(),
+        arbiter: arbiter.clone(),
+        amount: 200,
+        token: s.token_addr.clone(),
+        deadline,
+        metadata_hash: None,
+        sellers: Vec::new(&s.env),
+        auto_renew: true,
+        renewal_count: 0,
+        buyer_inactivity_secs: 0,
+        min_lock_until: None,
+        release_base: None,
+        release_quote: None,
+        release_comparison: None,
+        release_threshold_price: None,
+        arbiter_fee_bps: None,
+        dispute_default_winner: None,
+        auto_renew_max_renewals: Some(1),
+        auto_renew_interval_ledgers: Some(100),
+        renewal_condition_policy: RenewalConditionPolicy::CarryOver,
+    };
+    let escrow_id = s.client.create_escrow_v2(&buyer, &request);
+
+    // Set a ConditionalRelease condition.
+    let oracle = Address::generate(&s.env);
+    let condition = ConditionalRelease {
+        oracle_contract: oracle.clone(),
+        condition_method: soroban_sdk::symbol_short!("price"),
+        expected_value: 50,
+    };
+    s.client.set_conditional_release(&buyer, &escrow_id, &condition);
+
+    // Partially waive: buyer signs (seller has NOT signed yet — waiver stays incomplete).
+    s.client.waive_release_condition(&buyer, &escrow_id);
+
+    approve_allowance(&s, &buyer, 200);
+    s.client.release_escrow(&buyer, &escrow_id);
+
+    let renewed = s.client.get_escrow(&1u32);
+    assert_eq!(renewed.status, EscrowStatus::Active);
+    assert_eq!(renewed.extensions.renewal_condition_policy, RenewalConditionPolicy::CarryOver);
+
+    // The renewed escrow should have the condition copied (CarryOver policy).
+    // Verify by calling waive_release_condition with the buyer — if no condition existed
+    // this would panic with "No conditional release set".
+    // Buyer's prior waiver must NOT have been carried over: signing here is a fresh start.
+    s.client.waive_release_condition(&buyer, &1u32);
+
+    // Condition still present (seller hasn't signed yet), so escrow is still Active.
+    let after = s.client.get_escrow(&1u32);
+    assert_eq!(after.status, EscrowStatus::Active);
+}
+
+/// Stale partial-waiver must not leak: if only one party had waived in the prior term,
+/// the new term requires BOTH parties to waive again (Reset policy clears the condition;
+/// CarryOver drops waivers but keeps the condition itself).
+#[test]
+fn test_stale_partial_waiver_does_not_leak_into_renewed_term() {
+    let s = setup();
+    let buyer = Address::generate(&s.env);
+    let seller = Address::generate(&s.env);
+    let arbiter = Address::generate(&s.env);
+    s.token_admin_client.mint(&buyer, &1_000);
+
+    s.env.ledger().set_timestamp(1_000);
+    let deadline = s.env.ledger().timestamp() + 500;
+
+    let cfg = AutoRenewConfig {
+        max_renewals: 1,
+        renewal_interval_ledgers: 100,
+    };
+    let escrow_id = s.client.create_escrow_with_auto_renew(
+        &buyer, &seller, &arbiter, &200, &s.token_addr, &deadline, &None, &cfg,
+    );
+
+    // Set a ConditionalRelease condition (default Reset policy).
+    let condition = ConditionalRelease {
+        oracle_contract: Address::generate(&s.env),
+        condition_method: soroban_sdk::symbol_short!("check"),
+        expected_value: 1,
+    };
+    s.client.set_conditional_release(&buyer, &escrow_id, &condition);
+
+    // Buyer signs waiver but seller does NOT — partial waiver state.
+    s.client.waive_release_condition(&buyer, &escrow_id);
+
+    approve_allowance(&s, &buyer, 200);
+    s.client.release_escrow(&buyer, &escrow_id);
+
+    let renewed = s.client.get_escrow(&1u32);
+    assert_eq!(renewed.status, EscrowStatus::Active);
+
+    // With Reset policy: renewed escrow has NO condition and NO waivers.
+    // A second waiver attempt on escrow 1 by buyer should panic "No conditional release set".
+    let result = s.client.try_waive_release_condition(&buyer, &1u32);
+    assert!(result.is_err(), "No condition should exist on renewed escrow (Reset policy)");
+}
+
 /// Max renewals cap: renewals_completed == max_renewals means no further renewal.
 #[test]
 fn test_max_renewals_cap_enforced() {
